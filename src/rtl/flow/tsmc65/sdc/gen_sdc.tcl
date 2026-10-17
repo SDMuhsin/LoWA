@@ -2,9 +2,15 @@
 # (T65_ROOT and T65_KIT set).  Writes a plain SDC for one clock `clk` with literal values; the reference
 # cells come from the site config.  Sourced by DC and PrimeTime (set_load uses load_of, a DC/PT command).
 #   clock: period P, setup uncertainty 0.25 ns (jitter + pre-CTS skew), hold 0.05 ns, transition 0.15 ns
-#   IO   : input / output delay io_pct % of P on every non-clock port (blocks are wrapped in input flops,
-#          so these only bound the wrapper's first / last stage); site driver cells on inputs and clock,
-#          4 x the site load pin on outputs
+#   IO   : input / output delay io_pct % of P on every non-clock port; site driver cells on inputs and clock,
+#          4 x the site load pin on outputs.
+#          P8a scout blocks (syn/dc_block.tcl) sit in input-flop wrappers, so there the delays only bound the
+#          wrapper's first / last stage.  P8b units (syn/dc_unit.tcl, common/hier.txt) have no wrapper: the
+#          unit's own ports carry the delays.  The RTL rule (docs/rtl_conventions.md) is registered outputs and
+#          inputs driven by producer flops, so on a unit input the 20 % (0.8 ns at 4.0 ns) stands for the
+#          producer's clock-to-q plus the inter-unit route, and on a unit output it leaves P - 20 % for the
+#          unit's own output stage (clock-to-q plus buffering).  Bank leaves use 40 %: their address arrives
+#          through the parent's control logic, so the read mux gets a tighter budget, not a looser one.
 #   DRV  : max transition min(0.5, 0.1 P), max fanout 16
 # Latch register files (mm_bank_t65): flop -> positive-latch paths use the tool default (capture at the
 # closing edge of the same high phase, borrowing allowed); no exceptions are needed.

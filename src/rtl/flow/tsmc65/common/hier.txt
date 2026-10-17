@@ -1,0 +1,49 @@
+# Block table of the P8b hierarchical unit flow (syn/dc_unit.tcl, syn/run_hier.sh).  One block per line:
+#   name  module  params  children  io_pct
+# params: elaboration parameters (`-` = module defaults), written so that the elaborated design name equals the
+#   one the parent's instantiation produces (full16 values from top_chip / docs/calc/budget.py cfg full16).
+# children: blocks compiled before this one and linked into it as mapped, dont_touch sub-designs (each unique
+#   sub-block is compiled once and reused by every parent); `-` = none (the block is compiled flat).
+# io_pct: input / output delay on the block's own ports in % of the period (sdc/gen_sdc.tcl).  Units use 20;
+#   bank leaves use 40 because their address comes through the parent's control logic (tighter, not looser).
+# units (syn/run_hier.sh <unit>): fp gemm vec lowa mem rng ctrl; chip is the P8c top (prepared, not run in P8b).
+#
+# ---- fp: the arithmetic units, standalone, at the configurations the design instantiates
+fma      fp_fma        STAGES=>2                                 -                       20
+add      fp_add        STAGES=>2                                 -                       20
+mul2     fp_mul        STAGES=>2                                 -                       20
+mul1     fp_mul        STAGES=>1                                 -                       20
+cmp      fp_cmp        STAGES=>1                                 -                       20
+i2f      fp_i2f        STAGES=>1                                 -                       20
+sfu      fp_sfu        -                                         -                       20
+# ---- latch register-file banks (tsmc65 backend), one per shape used in full16
+bank256  mm_sram_bank  WORDS=>256,WIDTH=>32,AW=>8                -                       40
+bank512  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9                -                       40
+bank768  mm_sram_bank  WORDS=>768,WIDTH=>32,AW=>10               -                       40
+# ---- gemm: 16 x 16 PEs, NSFU 16
+pe       gm_pe         FMA_STAGES=>2,LAMBDA=>4,QW=>2             -                       20
+gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                pe,bank512,bank256      20
+# ---- vec: V = 16 lanes
+lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20
+vu16     vu_top        -                                         lane,bank256            20
+# ---- lowa
+lw       lw_top        -                                         bank256,bank512,bank768 20
+# ---- rng: the two Threefry mask-generator variants inside mm_top (keep channel 0: MKNC0 3 cores, 1: MKNC 9)
+rng9     rn_mkgen      MKW=>16,NCORE=>9,STAGES=>3                -                       20
+rng3     rn_mkgen      MKW=>16,NCORE=>3,STAGES=>3                -                       20
+# ---- mem: mm_top as top_chip instantiates it (8 read, 2 keep, 4 write channels, on-chip masks)
+mm       mm_top        NR=>8,NM=>2,NW=>4,AXL=>3,MK_DRAM=>0       rng9,rng3               20
+# ---- ctrl: sequencer (with ct_dma) and the host CSR slave
+seq      ct_seq        GP=>36,VP=>25,LP=>10                      -                       20
+axil     top_axil      -                                         -                       20
+# ---- P8c top (prepared only)
+chip     top_chip      -                                         gm16,vu16,lw,mm,seq,axil 20
+#
+# unit -> blocks (dependencies are added by run_hier.sh)
+@unit fp    fma add mul2 mul1 cmp i2f sfu
+@unit gemm  gm16
+@unit vec   vu16
+@unit lowa  lw
+@unit mem   mm
+@unit rng   rng9 rng3
+@unit ctrl  seq axil

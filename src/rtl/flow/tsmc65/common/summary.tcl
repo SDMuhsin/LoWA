@@ -90,3 +90,50 @@ proc t65_summary {path block top params period corner topo dut t0} {
     puts $fh [format "dc_wall_s %d dc_cpu_s %s dc_mem_kb %s" [expr {[clock seconds] - $t0}] $cpu $mem]
     close $fh
 }
+
+# ---------------------------------------------------------------- P8b hierarchical units (syn/dc_unit.tcl)
+# memory = cells inside mm_sram_bank instances (latch words, write / read logic, word ICGs), from the
+# hierarchical area report (instance name, absolute total area, ..., design name)
+proc t65_mem_area {rpt} {
+    set a 0.0; set n 0
+    set fh [open $rpt]
+    while {[gets $fh line] >= 0} {
+        set t [regexp -all -inline {\S+} $line]
+        if {[llength $t] >= 4 && [string match "*mm_sram_bank*" [lindex $t end]] && [string is double -strict [lindex $t 1]]} {
+            set a [expr {$a + [lindex $t 1]}]; incr n
+        }
+    }
+    close $fh
+    return [list $a $n]
+}
+proc t65_unit_summary {path block design params period corner topo io kid_design rpt t0} {
+    set fh [open $path w]
+    puts $fh "block $block top $design params {$params}"
+    puts $fh "period_ns $period corner $corner mode [expr {$topo ? {topographical} : {wire-load}}] io_pct $io hold_corner ff"
+    set nand2 [lindex [get_attribute [get_lib_cells */$::T65_NAND2] area] 0]
+    set all  [t65_leaf *]
+    set icg  [get_cells -quiet -hierarchical -filter "is_hierarchical==false && ref_name=~$::T65_ICG_PATTERN"]
+    set flop [remove_from_collection [all_registers -edge_triggered] $icg]
+    set lat  [remove_from_collection [all_registers -level_sensitive] $icg]
+    set comb [remove_from_collection [remove_from_collection [remove_from_collection $all $flop] $lat] $icg]
+    set a [t65_area $all]
+    puts $fh [format "area_um2 %.1f ge %.0f cells %d" $a [expr {$a / $nand2}] [sizeof_collection $all]]
+    foreach {lbl c} [list comb $comb flops $flop latches $lat icg $icg] {
+        puts $fh [format "area_%s %.1f cells %d" $lbl [t65_area $c] [sizeof_collection $c]]
+    }
+    lassign [t65_mem_area $rpt] ma mn
+    puts $fh [format "mem_area_um2 %.1f banks %d" $ma $mn]
+    redirect -variable ra {report_area -nosplit}
+    foreach k {{Net Interconnect} {Total cell}} {
+        if {[regexp -line "^$k area:\\s+(\[0-9.\]+)" $ra -> v]} { puts $fh [format "dc_area_%s %s" [string map {" " _} $k] $v] }
+    }
+    dict for {k kn} $kid_design {
+        puts $fh "child $k $kn [sizeof_collection [get_cells -quiet -hierarchical -filter ref_name==$kn]]"
+    }
+    t65_put_timing $fh
+    set cpu -1; set mem -1
+    catch {set cpu [cputime]}
+    catch {set mem [mem]}
+    puts $fh [format "dc_wall_s %d dc_cpu_s %s dc_mem_kb %s" [expr {[clock seconds] - $t0}] $cpu $mem]
+    close $fh
+}
