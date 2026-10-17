@@ -6,7 +6,8 @@ topographical mode:
 - tau-03, 8 cores, one job at a time
 - code taken from the server git checkout (`T65_TREE=checkout`; P8b commits e495cdd .. 662ce3c)
 
-Netlists, .ddc files and full reports stay on the server. Only the summary text files in
+Netlists, .ddc files and full reports stay on the server. Only the summary text files (git-ignored, fetched with
+`make sync65-results`) in
 `flow/tsmc65/results/hier_*.txt`, `paths_*.txt` and `pt_*.txt` come back.
 
 **Result.**
