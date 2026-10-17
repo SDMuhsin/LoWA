@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sequential bottom-up batch of the P8b flow (one DC at a time):  flow/tsmc65/syn/run_hier.sh <unit|block> ...
 # Units and blocks come from common/hier.txt; every child is built before its parent, and a block that already
-# has a design.txt (a finished run) is reused, not recompiled (FORCE=1 rebuilds the named blocks themselves).
+# has a design.txt (a finished run) is reused, not recompiled (FORCE=1 rebuilds the named blocks themselves, FORCE=all every block in the order).
 # Prints START / DC_DONE per run and HIER_DONE at the end; stops at the first failed block.
 #   cd <tree>/src/rtl || exit 1; nohup flow/tsmc65/syn/run_hier.sh vec > build/tsmc65/hier_vec.log 2>&1 < /dev/null &
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -22,7 +22,7 @@ for a in "$@"; do
 done
 echo "ORDER$ORDER"
 for b in $ORDER; do
-    if [ -f "$ROOT/build/tsmc65/hier/$b/design.txt" ]; then
+    if [ -f "$ROOT/build/tsmc65/hier/$b/design.txt" ] && [ "${FORCE:-0}" != all ]; then
         case " $NAMED " in *" $b "*) [ "${FORCE:-0}" = 1 ] || { echo "REUSE $b"; continue; } ;; *) echo "REUSE $b"; continue ;; esac
     fi
     echo "START $b $(date +%H:%M:%S)"

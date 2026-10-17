@@ -4,9 +4,19 @@
 proc t65_leaf {pattern} {
     return [get_cells -quiet -hierarchical -filter "is_hierarchical==false && full_name=~$pattern"]
 }
+# cells without an area attribute (none expected) are counted in ::T65_NOAREA and the first one is kept
+set ::T65_NOAREA 0; set ::T65_NOAREA_CELL ""
 proc t65_area {cells} {
     set a 0.0
-    foreach_in_collection c $cells { set a [expr {$a + [get_attribute -quiet $c area]}] }
+    foreach_in_collection c $cells {
+        set v [get_attribute -quiet $c area]
+        if {$v eq ""} {
+            incr ::T65_NOAREA
+            if {$::T65_NOAREA_CELL eq ""} { set ::T65_NOAREA_CELL [get_object_name $c] }
+            continue
+        }
+        set a [expr {$a + $v}]
+    }
     return $a
 }
 # instance (not pin) name of a path start / end point
@@ -106,7 +116,28 @@ proc t65_mem_area {rpt} {
     close $fh
     return [list $a $n]
 }
-proc t65_unit_summary {path block design params period corner topo io kid_design rpt t0} {
+# numbers of a finished block summary (dict: area_um2 mem_area_um2 flops latches setup_wns flop_wns hold_nviol);
+# for a block with abstracted children the unit totals are used
+proc t65_read_summary {f} {
+    set d [dict create area_um2 0 mem_area_um2 0 flops 0 latches 0 setup_wns NA flop_wns NA hold_nviol NA]
+    set fh [open $f]
+    while {[gets $fh l] >= 0} {
+        set t [regexp -all -inline {\S+} $l]
+        switch -- [lindex $t 0] {
+            area_um2      { dict set d area_um2 [lindex $t 1] }
+            mem_area_um2  { dict set d mem_area_um2 [lindex $t 1] }
+            area_flops    { dict set d flops [lindex $t 3] }
+            area_latches  { dict set d latches [lindex $t 3] }
+            setup_wns     { dict set d setup_wns [lindex $t 1] }
+            flop_wns      { dict set d flop_wns [lindex $t 1] }
+            hold_wns      { dict set d hold_nviol [lindex $t 5] }
+            unit_area_um2 { dict set d area_um2 [lindex $t 1]; dict set d mem_area_um2 [lindex $t 3]; dict set d latches [lindex $t 5]; dict set d flops [lindex $t 7] }
+        }
+    }
+    close $fh
+    return $d
+}
+proc t65_unit_summary {path block design params period corner topo io kid_design rpt t0 {abs 0} {hroot ""}} {
     set fh [open $path w]
     puts $fh "block $block top $design params {$params}"
     puts $fh "period_ns $period corner $corner mode [expr {$topo ? {topographical} : {wire-load}}] io_pct $io hold_corner ff"
@@ -123,6 +154,32 @@ proc t65_unit_summary {path block design params period corner topo io kid_design
     }
     lassign [t65_mem_area $rpt] ma mn
     puts $fh [format "mem_area_um2 %.1f banks %d" $ma $mn]
+    puts $fh "noarea_cells $::T65_NOAREA $::T65_NOAREA_CELL"
+    if {$abs} {
+        # children linked as block abstractions: the leaf cells above hold only their interface logic, so the
+        # unit totals are this block's own cells plus instances x each child's own summary
+        set own $all
+        dict for {k kn} $kid_design {
+            foreach_in_collection ci [get_cells -quiet -hierarchical -filter ref_name==$kn] {
+                set own [remove_from_collection $own [t65_leaf [get_object_name $ci]/*]]
+            }
+        }
+        set ta [t65_area $own]; set tm 0.0; set tl 0
+        set tf [sizeof_collection [remove_from_collection $flop [remove_from_collection $all $own]]]
+        puts $fh [format "own_area_um2 %.1f cells %d (outside the abstracted children)" $ta [sizeof_collection $own]]
+        dict for {k kn} $kid_design {
+            set n [sizeof_collection [get_cells -quiet -hierarchical -filter ref_name==$kn]]
+            set cs [t65_read_summary $hroot/$k/summary.txt]
+            set ta [expr {$ta + $n * [dict get $cs area_um2]}]
+            set tm [expr {$tm + $n * [dict get $cs mem_area_um2]}]
+            set tl [expr {$tl + $n * [dict get $cs latches]}]
+            set tf [expr {$tf + $n * [dict get $cs flops]}]
+            puts $fh [format "child_summary %s x%d area %.1f mem %.1f flops %d latches %d setup_wns %s flop_wns %s hold_nviol %s" \
+                $k $n [dict get $cs area_um2] [dict get $cs mem_area_um2] [dict get $cs flops] [dict get $cs latches] \
+                [dict get $cs setup_wns] [dict get $cs flop_wns] [dict get $cs hold_nviol]]
+        }
+        puts $fh [format "unit_area_um2 %.1f unit_mem_area_um2 %.1f unit_latches %d unit_flops %d (own + children)" $ta $tm $tl $tf]
+    }
     redirect -variable ra {report_area -nosplit}
     foreach k {{Net Interconnect} {Total cell}} {
         if {[regexp -line "^$k area:\\s+(\[0-9.\]+)" $ra -> v]} { puts $fh [format "dc_area_%s %s" [string map {" " _} $k] $v] }

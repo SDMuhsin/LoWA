@@ -4,9 +4,10 @@ proc t65_hier_load {} {
     while {[gets $fh line] >= 0} {
         set line [string trim $line]
         if {$line eq "" || [string index $line 0] in {# @}} continue
-        lassign $line name mod params kids io
+        lassign $line name mod params kids io link
         set ::T65_HIER($name) [dict create module $mod params [expr {$params eq "-" ? "" : $params}] \
-            children [expr {$kids eq "-" ? {} : [split $kids ,]}] io $io]
+            children [expr {$kids eq "-" ? {} : [split $kids ,]}] io $io \
+            link [expr {$link eq "abs" ? "abs" : "full"}]]
     }
     close $fh
 }

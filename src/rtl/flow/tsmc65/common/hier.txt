@@ -1,11 +1,14 @@
 # Block table of the P8b hierarchical unit flow (syn/dc_unit.tcl, syn/run_hier.sh).  One block per line:
 #   name  module  params  children  io_pct
+# module: an RTL module, or `@<block>/<instance>` = the sub-design of that instance in <block>'s elaboration.
 # params: elaboration parameters (`-` = module defaults), written so that the elaborated design name equals the
 #   one the parent's instantiation produces (full16 values from top_chip / docs/calc/budget.py cfg full16).
 # children: blocks compiled before this one and linked into it as mapped, dont_touch sub-designs (each unique
 #   sub-block is compiled once and reused by every parent); `-` = none (the block is compiled flat).
 # io_pct: input / output delay on the block's own ports in % of the period (sdc/gen_sdc.tcl).  Units use 20;
 #   bank leaves use 40 because their address comes through the parent's control logic (tighter, not looser).
+# link (optional 6th column): `abs` = children are linked as block abstractions (interface logic only) because
+#   the full netlist would not fit in ~24 GB; the unit totals then add each child's own summary.
 # units (syn/run_hier.sh <unit>): fp gemm vec lowa mem rng ctrl; chip is the P8c top (prepared, not run in P8b).
 #
 # ---- fp: the arithmetic units, standalone, at the configurations the design instantiates
@@ -22,7 +25,14 @@ bank512  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9                -              
 bank768  mm_sram_bank  WORDS=>768,WIDTH=>32,AW=>10               -                       40
 # ---- gemm: 16 x 16 PEs, NSFU 16
 pe       gm_pe         FMA_STAGES=>2,LAMBDA=>4,QW=>2             -                       20
-gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                pe,bank512,bank256      20
+# gm_top 16x16 holds 49,152 latch words (x feeder 16 x 512, w feeder 32 x 256, drain 64 x 512) and 256 PEs, too big
+# for one run: each sub-unit is a block of its own, taken from gm16's elaboration (`@gm16/<instance>`)
+gmarr    @gm16/u_array -                                         pe                      20
+gmxf     @gm16/u_xfeed -                                         bank512                 20
+gmwf     @gm16/u_wfeed -                                         bank256                 20
+gmdr     @gm16/u_drain -                                         bank512                 20
+gmep     @gm16/u_epilogue -                                      -                       20
+gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                gmarr,gmxf,gmwf,gmdr,gmep 20 abs
 # ---- vec: V = 16 lanes
 lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20
 vu16     vu_top        -                                         lane,bank256            20
@@ -37,7 +47,7 @@ mm       mm_top        NR=>8,NM=>2,NW=>4,AXL=>3,MK_DRAM=>0       rng9,rng3      
 seq      ct_seq        GP=>36,VP=>25,LP=>10                      -                       20
 axil     top_axil      -                                         -                       20
 # ---- P8c top (prepared only)
-chip     top_chip      -                                         gm16,vu16,lw,mm,seq,axil 20
+chip     top_chip      -                                         gm16,vu16,lw,mm,seq,axil 20 abs
 #
 # unit -> blocks (dependencies are added by run_hier.sh)
 @unit fp    fma add mul2 mul1 cmp i2f sfu

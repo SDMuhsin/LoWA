@@ -10,7 +10,7 @@ L0   := $(RUNS)/model_fp32.npz $(RUNS)/stepA_l0f32.npz $(RUNS)/stepA_l0f64.npz $
 .PHONY: model-check model-arith model-l0 model-l1 lint gen-check test-fp test-fp-quick test-unit \
         test-gemm test-gemm-quick test-vec test-vec-quick test-lowa test-lowa-quick test-mem test-mem-quick test-rng test-rng-quick synth-mem synth-rng synth-ctrl test-ctrl test-ctrl-quick compile compiler-check synth-fp synth-gemm synth-vec synth-lowa test-e2e test-e2e-full synth pnr clean-model clean \
         test-mem-t65 test-mem-gf180 test-mem-banks syn65-scout syn65-status syn65-results sync65-pull sync65-wip sync65-site sync65-results \
-        syn65u-status syn65u-results
+        syn65u-status syn65u-results syn65u-all
 
 ## P1 gate: arithmetic proof, L0 dumps (GPU cuda:0, ~1.5 min, only if missing), L1 steps, L1 vs L0
 model-check: model-arith model-l1
@@ -202,7 +202,8 @@ syn65-%:
 	$(call t65_launch,$*,$*)
 
 ## P8b: hierarchical DC of the full16 units at 4.0 ns (flow/tsmc65/common/hier.txt; children first, finished blocks reused):
-##   make syn65u-<unit|block> [T65_PERIOD=4.0]   unit = fp gemm vec lowa mem rng ctrl, or any block of hier.txt
+##   make syn65u-<unit|block> [T65_PERIOD=4.0] [FORCE=1|all]   unit = fp gemm vec lowa mem rng ctrl, or any block of hier.txt
+##   make syn65u-all [UNITS=...]                   every unit in one sequential batch (log build/tsmc65/hier_all.log)
 ##   make syn65u-status / syn65u-results         progress markers / one summary line per block (numbers only)
 ##   make sync65-results                         fetch the summary text files to flow/tsmc65/results/
 sync65-results:
@@ -214,8 +215,12 @@ syn65u-status:
 syn65u-results:
 	$(T65) run 'flow/tsmc65/tools/summarize_hier.sh'
 
+UNITS ?= fp ctrl rng mem lowa vec gemm
+syn65u-all:
+	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) nohup flow/tsmc65/syn/run_hier.sh $(UNITS) > build/tsmc65/hier_all.log 2>&1 < /dev/null & echo launched all'
+
 syn65u-%:
-	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) nohup flow/tsmc65/syn/run_hier.sh $* > build/tsmc65/hier_$*.log 2>&1 < /dev/null & echo launched $*'
+	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) nohup flow/tsmc65/syn/run_hier.sh $* > build/tsmc65/hier_$*.log 2>&1 < /dev/null & echo launched $*'
 
 synth pnr:
 	@echo "make $@: not implemented yet (see PLAN.md phases P2-P8)"; false

@@ -9,7 +9,7 @@
 d=$1; log=$d/dc.log; cd_rpt=$d/rpt/check_design.rpt
 [ -f "$log" ] || { echo "integ_missing $log"; exit 0; }
 awk '
-    /in routine/ { for (i = 1; i <= NF; i++) if ($i == "routine") r = $(i+1) }
+    /in routine/ { for (i = 1; i <= NF; i++) if ($i == "routine") { r = $(i+1); gsub("\047", "", r) } }
     /^\|/ && /\| *Latch *\|/ { n = split($0, f, "|"); w = f[4] + 0; if (r ~ /^mm_bank_t65/) rf += w; else { ot += w; om[r] += w } }
     END {
         printf "integ_latch_rf %d\n", rf

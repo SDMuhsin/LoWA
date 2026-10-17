@@ -34,6 +34,7 @@ set mod    [t65_hier $block module]
 set params [t65_hier $block params]
 set kids   [t65_hier $block children]
 set io     [t65_hier $block io]
+set abs    [expr {[t65_hier $block link] eq "abs" && [llength $kids]}]
 file mkdir $out/rpt
 set_host_options -max_cores $cores
 t65_dc_setup $corner $topo $out
@@ -42,68 +43,55 @@ set_svf $out/$block.svf
 # ---------------------------------------------------------------- read RTL
 define_design_lib WORK -path $out/work
 analyze -format verilog -define [t65_defines] [t65_hw_files]
-if {$params eq ""} { elaborate $mod } else { elaborate $mod -parameters $params }
+# module `@<block>/<instance>`: the sub-design that instance has inside <block>'s elaboration (parameters as the
+# parent passes them, so the design name is the parent's by construction)
+if {[string index $mod 0] eq "@"} {
+    lassign [split [string range $mod 1 end] /] cb inst
+    set cm [t65_hier $cb module]; set cp [t65_hier $cb params]
+    if {$cp eq ""} { elaborate $cm } else { elaborate $cm -parameters $cp }
+    set c [get_cells -quiet $inst]
+    if {[sizeof_collection $c] != 1} { puts "T65_ERROR no instance $inst in $cm"; exit 1 }
+    current_design [get_attribute $c ref_name]
+} elseif {$params eq ""} { elaborate $mod } else { elaborate $mod -parameters $params }
 set design [get_object_name [current_design]]
 puts "T65_DESIGN $design"
 
 # ---------------------------------------------------------------- mapped children
-# all descendants (children of children too): their generic designs go first, then each .ddc is read once
-proc t65_desc {b} { set r {}; foreach k [t65_hier $b children] { lappend r $k; lappend r {*}[t65_desc $k] }; return [lsort -unique $r] }
+# Each direct child's generic elaboration is replaced by its mapped .ddc.  Every design inside a child's .ddc
+# carries that child's prefix (see the renaming below), so .ddc files of different children never collide.
 # The child run elaborated its module alone; if the parent's instantiation names the same parameter set
 # differently (other order), the design is matched by its set of name tokens and the mapped one renamed.
+# link `abs` (6th column): children are read as their block abstractions (interface logic only; the
+# abstraction is written into every block's .ddc), for parents whose full netlist would not fit in memory.
 proc t65_tokens {n} { lsort [split $n _] }
+set abs_refs {}
 set kid_design [dict create]
-set kid_file   [dict create]
-foreach k [t65_desc $block] {
+foreach k $kids {
     set f $hroot/$k/design.txt
     if {![file exists $f]} { puts "T65_ERROR child $k not built ($f)"; exit 1 }
     set fh [open $f]; set kn [string trim [read $fh]]; close $fh
-    dict set kid_file $k $kn
     set pn $kn
     if {[sizeof_collection [get_designs -quiet $kn]] == 0} {
         set pn ""
-        foreach c [get_object_name [get_designs -quiet [t65_hier $k module]*]] {
+        foreach c [get_object_name [get_designs -quiet *]] {
             if {[t65_tokens $c] eq [t65_tokens $kn]} { set pn $c }
         }
-        if {$pn eq ""} {
-            puts "T65_ERROR child $k: design $kn is not in the elaborated hierarchy of $design; candidates:\
-                  [get_object_name [get_designs -quiet [t65_hier $k module]*]]"
-            exit 1
-        }
+        if {$pn eq ""} { puts "T65_ERROR child $k: design $kn is not in the elaborated hierarchy of $design"; exit 1 }
         puts "T65_MATCH child $k $kn as $pn"
     }
     dict set kid_design $k $pn
     remove_design $pn
-}
-set owned {}
-foreach k $kids {
-    set kn [dict get $kid_file $k]
-    set pn [dict get $kid_design $k]
-    if {[sizeof_collection [get_designs -quiet $pn]] == 0} {
-        set before [get_object_name [get_designs]]
-        read_ddc $hroot/$k/$k.ddc
-        foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend owned $d } }
-    }
-    # a grandchild loaded by an earlier child's .ddc under its own run's name
-    dict for {g gn} $kid_file {
-        set gp [dict get $kid_design $g]
-        if {$gn ne $gp && [sizeof_collection [get_designs -quiet $gn]] && ![sizeof_collection [get_designs -quiet $gp]]} {
-            rename_design $gn $gp; lappend owned $gp
-        }
-    }
+    if {$abs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
+    read_ddc $hroot/$k/$k.ddc
+    if {$pn ne $kn} { rename_design $kn $pn }
 }
 current_design $design
 if {![link]} { puts "T65_ERROR link failed"; exit 1 }
-set kid_cells {}
-foreach k [t65_desc $block] {
-    set kn [dict get $kid_design $k]
+dict for {k kn} $kid_design {
     set c [get_cells -quiet -hierarchical -filter "ref_name==$kn"]
     puts "T65_CHILD $k $kn [sizeof_collection $c]"
-    if {$k in $kids} {
-        if {[sizeof_collection $c] == 0} { puts "T65_ERROR child $k has no instance"; exit 1 }
-        set_dont_touch $c true
-        set kid_cells [add_to_collection $kid_cells $c]
-    }
+    if {[sizeof_collection $c] == 0} { puts "T65_ERROR child $k has no instance"; exit 1 }
+    if {[catch {set_dont_touch $c true} e]} { puts "T65_NOTE dont_touch $k: $e" }
 }
 
 # ---------------------------------------------------------------- constraints
@@ -122,28 +110,27 @@ set_clock_gating_style -sequential_cell latch -positive_edge_logic integrated \
 compile_ultra -no_autoungroup -gate_clock
 if {$incr} { compile_ultra -incremental -no_autoungroup }
 
-# ---------------------------------------------------------------- own sub-designs get the block prefix
+# ---------------------------------------------------------------- every sub-design gets the block prefix
+# (children included: their own sub-designs already carry the child's prefix, so names nest, e.g.
+#  gmdr__mm_sram_bank_WORDS512_WIDTH32_AW9 and gmdr__bank512__mm_icg)
 set refs [lsort -unique [get_attribute -quiet [get_cells -quiet -hierarchical -filter is_hierarchical==true] ref_name]]
 set nren 0
 foreach d $refs {
-    if {$d in $owned || [string match "${block}__*" $d]} continue
-    if {[dict exists $kid_design $d]} continue
-    if {[lsearch -exact [dict values $kid_design] $d] >= 0} continue
+    if {[string match "${block}__*" $d] || $d eq $design} continue
     rename_design $d ${block}__$d
     incr nren
 }
 puts "T65_RENAMED $nren"
+dict for {k kn} $kid_design { dict set kid_design $k ${block}__$kn }
 current_design $design
 change_names -rules verilog -hierarchy
 set design [get_object_name [current_design]]
 
 # ---------------------------------------------------------------- outputs (stay on the server)
-write -format ddc -hierarchy -output $out/$block.ddc
 write -format verilog -hierarchy -output $out/$block.v
 write_sdc $out/$block.out.sdc
 if {$topo && $spef} { catch { write_parasitics -output $out/$block.spef } }
 set_svf -off
-set fh [open $out/design.txt w]; puts $fh $design; close $fh
 report_qor                                > $out/rpt/qor.rpt
 report_area -hierarchy -nosplit           > $out/rpt/area_hier.rpt
 report_timing -max_paths 10 -nworst 1 -nosplit > $out/rpt/timing_max.rpt
@@ -151,5 +138,10 @@ report_timing -delay_type min -max_paths 10 -nosplit > $out/rpt/timing_min.rpt
 report_constraint -all_violators -nosplit > $out/rpt/violators.rpt
 check_timing                              > $out/rpt/check_timing.rpt
 report_clock_gating -nosplit              > $out/rpt/clock_gating.rpt
-t65_unit_summary $out/summary.txt $block $design $params $period $corner $topo $io $kid_design $out/rpt/area_hier.rpt $t0
+if {[catch {t65_unit_summary $out/summary.txt $block $design $params $period $corner $topo $io $kid_design \
+        $out/rpt/area_hier.rpt $t0 $abs $hroot} e]} { puts "T65_ERROR summary: $e" }
+# the block abstraction (for parents linking with `abs`) goes into the .ddc with the full netlist
+if {$topo && [catch {create_block_abstraction} e]} { puts "T65_NOTE create_block_abstraction: $e" }
+write -format ddc -hierarchy -output $out/$block.ddc
+set fh [open $out/design.txt w]; puts $fh $design; close $fh
 exit

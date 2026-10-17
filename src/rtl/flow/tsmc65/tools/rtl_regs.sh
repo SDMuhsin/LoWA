@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # RTL register expectation of a block of common/hier.txt (local, Yosys; tsmc65 memory backend, behavioural mm_icg):
 #   flow/tsmc65/tools/rtl_regs.sh <block> ...
-# Prints flop bits and latch bits of the flattened block twice: raw (after proc) and after Yosys' own removal of
+# Prints flop bits and latch bits of the flattened block twice: raw (after proc, register arrays mapped to
+# flops by `memory`) and after Yosys' own removal of
 # unloaded / constant registers (opt_clean, opt_dff), the counterpart of DC's OPT-1206 / OPT-1207.  Latch bits
 # include one latch per mm_icg (DC maps those to library ICG cells, which the DC summary counts separately).
 set -u
@@ -21,8 +22,13 @@ for b in "$@"; do
     [ -n "$mod" ] || { echo "unknown block $b"; continue; }
     chp=""
     [ "$params" != "-" ] && for kv in ${params//,/ }; do chp="$chp -chparam ${kv%%=>*} ${kv##*=>}"; done
-    base="read_verilog -DSYNTHESIS -DMM_TECH=2 $FILES; hierarchy -check -top $mod $chp; proc; flatten"
-    yosys -q -l "$OUT/$b.raw.log" -p "$base; tee -o $OUT/$b.raw.stat stat -width" > /dev/null 2>&1 || { echo "$b yosys failed ($OUT/$b.raw.log)"; continue; }
+    base="read_verilog -DSYNTHESIS -DMM_TECH=2 $FILES; hierarchy -check -top $mod $chp; proc; flatten; memory"
+    # Yosys asserts on some -chparam sets that equal the module defaults (vu_lane); those run with the defaults
+    if ! yosys -q -l "$OUT/$b.raw.log" -p "$base; tee -o $OUT/$b.raw.stat stat -width" > /dev/null 2>&1; then
+        base="read_verilog -DSYNTHESIS -DMM_TECH=2 $FILES; hierarchy -check -top $mod; proc; flatten; memory"
+        echo "$b: -chparam failed, using the module defaults (check they equal: $params)"
+        yosys -q -l "$OUT/$b.raw.log" -p "$base; tee -o $OUT/$b.raw.stat stat -width" > /dev/null 2>&1 || { echo "$b yosys failed ($OUT/$b.raw.log)"; continue; }
+    fi
     yosys -q -l "$OUT/$b.opt.log" -p "$base; opt_clean -purge; opt_dff; opt_clean -purge; tee -o $OUT/$b.opt.stat stat -width" > /dev/null 2>&1
     echo "rtl_regs $b $mod raw: $(count "$OUT/$b.raw.stat")  opt: $(count "$OUT/$b.opt.stat")"
 done
