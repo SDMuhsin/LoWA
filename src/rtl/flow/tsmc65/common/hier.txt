@@ -7,8 +7,13 @@
 #   sub-block is compiled once and reused by every parent); `-` = none (the block is compiled flat).
 # io_pct: input / output delay on the block's own ports in % of the period (sdc/gen_sdc.tcl).  Units use 20;
 #   bank leaves use 40 because their address comes through the parent's control logic (tighter, not looser).
-# link (optional 6th column): `abs` = children are linked as block abstractions (interface logic only) because
-#   the full netlist would not fit in ~24 GB; the unit totals then add each child's own summary.
+# link (optional 6th column): `abs` = children are linked as block abstractions (interface logic only); every
+#   parent uses it.  Linking full netlists with dont_touch was tried first: DC topographical then places the
+#   children's cells spread over the parent's whole area and, the children being dont_touch, cannot re-buffer
+#   the longer estimated wires (vu16 -2.49 ns and mm -1.97 ns inside lanes / mask generators that close
+#   alone).  With abstractions each child's internal paths are timed in its own run (a compact region, as a
+#   hierarchical layout places it) and the parent times the interface paths; the unit totals add each child's
+#   own summary.  It also keeps gm16 within memory.
 # units (syn/run_hier.sh <unit>): fp gemm vec lowa mem rng ctrl; chip is the P8c top (prepared, not run in P8b).
 #
 # ---- fp: the arithmetic units, standalone, at the configurations the design instantiates
@@ -25,24 +30,24 @@ bank512  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9                -              
 bank768  mm_sram_bank  WORDS=>768,WIDTH=>32,AW=>10               -                       40
 # ---- gemm: 16 x 16 PEs, NSFU 16
 pe       gm_pe         FMA_STAGES=>2,LAMBDA=>4,QW=>2             -                       20
-# gm_top 16x16 holds 49,152 latch words (x feeder 16 x 512, w feeder 32 x 256, drain 64 x 512) and 256 PEs, too big
+# gm_top 16x16 holds 24,576 latch words (x feeder, w feeder, drain: 8,192 each) and 256 PEs (~3M cells), too big
 # for one run: each sub-unit is a block of its own, taken from gm16's elaboration (`@gm16/<instance>`)
-gmarr    @gm16/u_array -                                         pe                      20
-gmxf     @gm16/u_xfeed -                                         bank512                 20
-gmwf     @gm16/u_wfeed -                                         bank256                 20
-gmdr     @gm16/u_drain -                                         bank512                 20
+gmarr    @gm16/u_array -                                         pe                      20 abs
+gmxf     @gm16/u_xfeed -                                         bank512                 20 abs
+gmwf     @gm16/u_wfeed -                                         bank256                 20 abs
+gmdr     @gm16/u_drain -                                         bank512                 20 abs
 gmep     @gm16/u_epilogue -                                      -                       20
 gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                gmarr,gmxf,gmwf,gmdr,gmep 20 abs
 # ---- vec: V = 16 lanes
-lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20
-vu16     vu_top        -                                         lane,bank256            20
+lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20 abs
+vu16     vu_top        -                                         lane,bank256            20 abs
 # ---- lowa
-lw       lw_top        -                                         bank256,bank512,bank768 20
+lw       lw_top        -                                         bank256,bank512,bank768 20 abs
 # ---- rng: the two Threefry mask-generator variants inside mm_top (keep channel 0: MKNC0 3 cores, 1: MKNC 9)
 rng9     rn_mkgen      MKW=>16,NCORE=>9,STAGES=>3                -                       20
 rng3     rn_mkgen      MKW=>16,NCORE=>3,STAGES=>3                -                       20
 # ---- mem: mm_top as top_chip instantiates it (8 read, 2 keep, 4 write channels, on-chip masks)
-mm       mm_top        NR=>8,NM=>2,NW=>4,AXL=>3,MK_DRAM=>0       rng9,rng3               20
+mm       mm_top        NR=>8,NM=>2,NW=>4,AXL=>3,MK_DRAM=>0       rng9,rng3               20 abs
 # ---- ctrl: sequencer (with ct_dma) and the host CSR slave
 seq      ct_seq        GP=>36,VP=>25,LP=>10                      -                       20
 axil     top_axil      -                                         -                       20
