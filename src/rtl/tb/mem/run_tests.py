@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """make test-mem (P6a): memory-system unit tests (tb_mm_unit vs tb_dram, goldens from the python reference in gen_mm.py on a
 memory_map-placed image) and integration (gm_top / vu_top / lw_top on mm_top + tb_dram, goldens from L1 via the P3-P5
-generators, re-placed by gen_integ.py).  run_tests.py [--quick]   Summary: build/test-mem/summary.txt, exit 1 on any FAIL."""
+generators, re-placed by gen_integ.py).  run_tests.py [--quick] [--tech generic|gf180|tsmc65]
+--tech picks the mm_sram_bank backend (PLAN R11a; default generic): tsmc65 runs the latch register file with the behavioural
+clock gate hw/mem/tech/mm_icg.v.  Summary: build/test-mem[-<tech>]/summary.txt, exit 1 on any FAIL."""
 import argparse
 import glob
 import os
@@ -14,6 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PY = sys.executable
 OUT = os.path.join(ROOT, "build", "test-mem")
+TECHS = {"generic": 0, "gf180": 1, "tsmc65": 2}
+TECHDEF = ""                                                                 # +define+MM_TECH=<n> for a non-default backend
 HW = " ".join(os.path.relpath(f, ROOT) for f in sorted(glob.glob(os.path.join(ROOT, "hw", "**", "*.v"), recursive=True)))
 UNIT = ["burst", "pattern", "write", "order", "outst"]
 NOM = "+lat=24 +wlat=8 +bw=3200 +wfair=1"                                  # 800 MB/s at 25 MHz, ~1 us read latency
@@ -38,7 +42,7 @@ def sh(cmd, log):
 def build(name, top, srcs, params="", defs=""):
     mdir = os.path.join(OUT, "sim", name)
     exe = os.path.join(mdir, "V" + top)
-    r = sh(f"verilator --binary -j 8 --timing -O3 -Wno-fatal -Wno-lint -Wno-style {params} {defs} +incdir+tb/mem "
+    r = sh(f"verilator --binary -j 8 --timing -O3 -Wno-fatal -Wno-lint -Wno-style {params} {defs} {TECHDEF} +incdir+tb/mem "
            f"--top-module {top} -Mdir {mdir} {srcs} tb/mem/tb_dram.sv {HW}", mdir + ".build.log")
     if r.returncode or not os.path.exists(exe):
         raise RuntimeError(f"verilator build failed: {mdir}.build.log")
@@ -61,7 +65,13 @@ def stats(txt, mkid=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--tech", choices=sorted(TECHS), default="generic")
     a = ap.parse_args()
+    global OUT, TECHDEF
+    if a.tech != "generic":
+        OUT, TECHDEF = OUT + "-" + a.tech, f"+define+MM_TECH={TECHS[a.tech]}"
+    if a.tech == "tsmc65":      # thousands of latch words: unoptimised C++ (an -Os build of gm_top takes many hours)
+        TECHDEF += " -MAKEFLAGS OPT_FAST=-O0 -MAKEFLAGS OPT_SLOW=-O0"
     for d in ("vec", "sim", "integ"):
         os.makedirs(os.path.join(OUT, d), exist_ok=True)
     rows, bad = [], 0
@@ -142,7 +152,7 @@ def main():
     lines += [f"| {u} | {c} | {k} | {r} | {n} | {t:.0f}s |" for u, c, k, r, n, t in rows]
     open(os.path.join(OUT, "summary.txt"), "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))
-    print("TEST-MEM", "PASS" if bad == 0 else f"FAIL ({bad})")
+    print("TEST-MEM", f"[{a.tech}]", "PASS" if bad == 0 else f"FAIL ({bad})")
     sys.exit(1 if bad else 0)
 
 

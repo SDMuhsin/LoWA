@@ -8,7 +8,8 @@ RUNS := model/runs
 L0   := $(RUNS)/model_fp32.npz $(RUNS)/stepA_l0f32.npz $(RUNS)/stepA_l0f64.npz $(RUNS)/stepB_l0f32.npz $(RUNS)/stepB_l0f64.npz
 
 .PHONY: model-check model-arith model-l0 model-l1 lint gen-check test-fp test-fp-quick test-unit \
-        test-gemm test-gemm-quick test-vec test-vec-quick test-lowa test-lowa-quick test-mem test-mem-quick test-rng test-rng-quick synth-mem synth-rng synth-ctrl test-ctrl test-ctrl-quick compile compiler-check synth-fp synth-gemm synth-vec synth-lowa test-e2e test-e2e-full synth pnr clean-model clean
+        test-gemm test-gemm-quick test-vec test-vec-quick test-lowa test-lowa-quick test-mem test-mem-quick test-rng test-rng-quick synth-mem synth-rng synth-ctrl test-ctrl test-ctrl-quick compile compiler-check synth-fp synth-gemm synth-vec synth-lowa test-e2e test-e2e-full synth pnr clean-model clean \
+        test-mem-t65 test-mem-gf180 test-mem-banks syn65-scout syn65-status syn65-results sync65-pull sync65-wip sync65-site
 
 ## P1 gate: arithmetic proof, L0 dumps (GPU cuda:0, ~1.5 min, only if missing), L1 steps, L1 vs L0
 model-check: model-arith model-l1
@@ -93,6 +94,20 @@ test-rng:
 test-rng-quick:
 	$(EDA) $(PY) tb/rng/run_tests.py --quick
 
+## P8a: the same memory tests on the tsmc65 latch-register-file backend (behavioural clock gate) and on the gf180 macros.
+## The latch RF simulates ~100x slower than the generic array, so test-mem-t65 defaults to the --quick set (all unit cases +
+## the non-real integration cases); T65_MEM_ARGS= runs the real cases too (real_ffn1_256 alone is estimated at > 10 h).
+T65_MEM_ARGS ?= --quick
+test-mem-t65:
+	$(EDA) $(PY) tb/mem/run_tests.py --tech tsmc65 $(T65_MEM_ARGS)
+
+test-mem-gf180:
+	$(EDA) $(PY) tb/mem/run_tests.py --tech gf180
+
+## P8a: mm_sram_bank port contract on all three backends (Icarus + Verilator, tb/mem/tb_mm_sram_bank.sv)
+test-mem-banks:
+	$(EDA) $(PY) tb/mem/run_banks.py
+
 test-unit: test-fp test-gemm test-vec test-lowa test-mem test-rng test-ctrl
 
 ## P2: area / STA table of every fp unit, then gate-level simulation of the production netlists
@@ -152,6 +167,38 @@ test-e2e:
 
 test-e2e-full:
 	$(EDA) $(PY) tb/top/run_e2e.py --layers 12 --batch 2 --seq 32 --steps 2 --l1 --maxcyc 200000000
+
+## P8a: TSMC-65 synthesis on the CMC server (flow/tsmc65; server and tree from the git-ignored site/site.sh).
+## Code goes up by git (push, then make sync65-pull) or, before a push, make sync65-wip.  Jobs run detached, one DC at a time:
+##   make syn65-<block> [PERIODS="5.0 4.0 6.67"]   one block (flow/tsmc65/common/blocks.tcl) at each period
+##   make syn65-scout                              the P8a scout: fma pe sfu bank768 lane gm4 at PERIODS
+##   make syn65-status / syn65-results             progress markers / one summary line per run (numbers only)
+T65     := flow/tsmc65/sync.sh
+PERIODS ?= 5.0 4.0 6.67
+SCOUT   ?= fma pe sfu bank768 lane gm4
+t65_jobs = $(foreach b,$(1),$(foreach p,$(PERIODS),$(b):$(p)))
+t65_launch = $(T65) run 'mkdir -p build/tsmc65; nohup flow/tsmc65/syn/run_scout.sh $(call t65_jobs,$(1)) > build/tsmc65/scout_$(2).log 2>&1 < /dev/null & echo launched $(2)'
+
+sync65-pull:
+	$(T65) pull
+
+sync65-wip:
+	$(T65) wip
+
+sync65-site:
+	$(T65) site
+
+syn65-scout:
+	$(call t65_launch,$(SCOUT),scout)
+
+syn65-status:
+	$(T65) run 'tail -n 3 build/tsmc65/scout_*.log; ps -u $$USER -o pid,etime,args | grep [d]c_shell | grep -v tcsh | cut -c1-60 || true'
+
+syn65-results:
+	$(T65) run 'flow/tsmc65/tools/summarize.sh'
+
+syn65-%:
+	$(call t65_launch,$*,$*)
 
 synth pnr:
 	@echo "make $@: not implemented yet (see PLAN.md phases P2-P8)"; false

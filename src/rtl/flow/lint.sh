@@ -28,6 +28,9 @@ for h in 0 1 3; do vl vu_loader -GHBL=$h; done; vl vu_top -GNOB=4; vl vu_writer 
 for c in "16 9 3" "16 3 3" "16 1 1" "4 3 3" "2 1 14"; do set -- $c; vl rn_mkgen -GMKW=$1 -GNCORE=$2 -GSTAGES=$3; done
 for s in 1 2 7 14; do vl rn_tf -GSTAGES=$s; done
 vl mm_sram_bank -GWORDS=512 -GAW=9; vl mm_sram_bank -GWORDS=1024 -GAW=10
+# memory technology backends (PLAN R11a): every backend through the wrapper, and units built on the tsmc65 one
+for t in 0 1 2; do vl mm_sram_bank -GTECH=$t -GWORDS=768 -GAW=10; vl mm_sram_bank -GTECH=$t -GWORDS=300 -GWIDTH=24 -GAW=9; done
+vl lw_sg -DMM_TECH=2; vl gm_top -GROWS=4 -GCOLS=4 -GNSFU=2 -DMM_TECH=2
 for s in 1 2 3 4 5 6; do vl fp_fma -GSTAGES=$s; vl fp_add -GSTAGES=$s; done
 for s in 1 2 3; do vl fp_mul -GSTAGES=$s; vl fp_i2f -GSTAGES=$s; vl fp_cmp -GSTAGES=$s; done
 for lf in 1 2 3 4 6; do for nt in 1 2 $((lf + 2)); do [ $nt -le $((lf + 2)) ] && vl fp_sfu -GLF=$lf -GNTHR=$nt; done; done
@@ -35,12 +38,20 @@ for nn in 0 1 2 3; do for r in 0 1; do vl cm_delay -GN=$nn -GRST=$r -GW=3; done;
 for w in "32 16 1" "201 64 4" "10 3 4" "4224 4 64"; do set -- $w; vl cm_ohmux -GW=$1 -GN=$2 -GREP=$3; done
 for w in "8 3" "29 5" "32 5" "78 7"; do set -- $w; vl fp_norm -GW=$1 -GCW=$2; done
 for w in 29 32 48 78; do vl fp_round -GMW=$w; done
-# Yosys
+# Yosys (-DSYNTHESIS: mm_sram_bank defaults to the gf180 backend).  Latches are an error everywhere except in
+# the tsmc65 latch register file and its clock gate (PLAN R11a), which must contain them.
 YS=""
 for m in $MODS; do
+    case $m in
+        mm_bank_t65|mm_icg) LAT="select -assert-any t:\$dlatch*; select -assert-none t:\$sr;" ;;
+        *) LAT="select -assert-none t:\$dlatch* t:\$sr;" ;;
+    esac
     YS="$YS design -reset; read_verilog -DSYNTHESIS $HW; hierarchy -check -top $m; proc;
-        check -assert; select -assert-none t:\$dlatch* t:\$sr;"
+        check -assert; $LAT"
 done
+YS="$YS design -reset; read_verilog -DSYNTHESIS -DMM_TECH=2 $HW; hierarchy -check -top lw_sg; proc; check -assert;"
+YS="$YS design -reset; read_verilog -DSYNTHESIS -DMM_TECH=0 $HW; hierarchy -check -top lw_sg; proc; check -assert;
+    select -assert-none t:\$dlatch* t:\$sr;"
 if ! yosys -q -l $OUT/yosys.log -p "$YS" > /dev/null 2>&1; then
     echo "LINT FAIL yosys (see $OUT/yosys.log)"; tail -5 $OUT/yosys.log; fail=1
 fi

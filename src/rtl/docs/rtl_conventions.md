@@ -6,6 +6,9 @@ reason) and Icarus 13 (`-g2005`). In `hw/` there are no `real`s, no `$` system f
 `$signed`, `$clog2`; widths are computed by hand or by plain constant expressions), no `initial` blocks,
 no `#` delays and no latches. Testbenches (`tb/`) may use SystemVerilog constructs that both
 Verilator and Icarus accept, and system tasks (`$fscanf`, `$display`, `$finish`).
+Exception (PLAN R11a): the tsmc65 memory backend `hw/mem/tech/mm_bank_t65.v` (latch register file) and its
+clock gate `hw/mem/tech/mm_icg.v` contain latches by design; `flow/lint.sh` requires latches there and
+forbids them everywhere else.
 
 **Files and names.**
 - One module per file, file name = module name (`hw/fp/fp_fma.v` holds `module fp_fma`).
@@ -38,5 +41,10 @@ not reset (area); they are never read while their valid bit is 0.
 generated into `build/` (git-ignored) by `tb/<dir>/gen_*.py`, which take expected values only from
 the L1 entry points (`model/hwmodel`, `import hwmodel as H`). A testbench prints exactly one final
 line `PASS <unit> <n> vectors` or `FAIL <unit> <m>/<n> mismatches`; the Makefile greps for it.
+
+**Memory backends.** `mm_sram_bank` is the only on-chip memory primitive. Its technology backend
+(`hw/mem/tech/`: generic / gf180 / tsmc65) is chosen by the `MM_TECH` macro behind one port contract;
+units never instantiate a backend or a library cell directly. Library cell names live only in
+git-ignored site files (`flow/tsmc65/site/`).
 
 **Build outputs** go under `build/` only (simulator objects, vectors, logs, netlists, reports).

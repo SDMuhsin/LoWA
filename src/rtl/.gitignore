@@ -1,2 +1,7 @@
 # all simulator / synthesis / vector outputs (docs/rtl_conventions.md)
 build/
+# TSMC-65 flow: site config is kit / server specific (only the templates are tracked); summaries fetched from the server
+flow/tsmc65/site/*
+!flow/tsmc65/site/README.md
+!flow/tsmc65/site/*.example.*
+flow/tsmc65/results/
