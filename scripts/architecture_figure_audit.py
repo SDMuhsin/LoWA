@@ -33,7 +33,7 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-FIGDIR = os.path.join(ROOT, "llmdocs", "paper", "scora_v1_prl", "figures")
+FIGDIR = os.path.join(ROOT, "llmdocs", "archive", "scora", "paper", "scora_v1_prl", "figures")
 OUTDIR = os.path.join(ROOT, "scratchpad", "figaudit")
 DPI = 300
 PPC = DPI / 2.54

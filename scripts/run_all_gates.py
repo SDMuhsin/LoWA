@@ -42,6 +42,8 @@ GATES = [
     ("scripts/fir_backbone_port.py",   "[fir] backbone port: atom, init perturbation, derived scale/lr"),
     ("scripts/fir_plan.py",            "[fir] cell planner: target rewrite, derived lr/warmup, one CSV per cell"),
     ("scripts/fir_preflight_arms.py",  "[fir] receipts: every arm attached, budgets agree ACROSS arms"),
+    ("src/verify_sgwa.py",             "[S.1] SGWA: every atom == p(L) delta_a incl. folded boundaries, merged == factored, 0 syncs"),
+    ("src/verify_sgwa_parallel.py",    "[S.4] SGWA-Pop: population (merged/stencil) == per-run SGWALinear, TP shards exact, PopAdamW == AdamW, 0 syncs"),
     ("src/verify_head_trainable.py",   "[fir] the classification head is TRAINABLE on a DECODER, all 9 wrappers"),
     ("scripts/fir_shell_gates.py",     "[fir] the SHELL layer: venv-location controls, no bare python, both directions"),
     ("scripts/fir_hp_plan.py",         "[fir] the MRPC hp grids g1/g2 (lr) + w1 (WaveFT, P coordinate), all checked"),

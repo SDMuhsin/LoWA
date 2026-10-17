@@ -24,7 +24,7 @@ import r305_read as R5
 import r306_plan as R6
 import r306_read as R6r
 
-OUT = os.path.join(ROOT, "llmdocs", "baseline_hp_search_results.md")
+OUT = os.path.join(ROOT, "llmdocs", "archive", "scora", "baseline_hp_search_results.md")
 
 # ⛔ Snapshot `[R.305]`'s arm table AT IMPORT.  `r306_plan.install()` replaces
 # `r305_plan.ARMS` with its single-arm dict (the same re-pointed-global trap that

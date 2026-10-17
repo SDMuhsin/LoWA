@@ -248,7 +248,7 @@ def prereg_hashes():
     import hashlib
     out = {}
     for name, want in PREREG_SHA256.items():
-        path = os.path.join(ROOT, "llmdocs", name)
+        path = os.path.join(ROOT, "llmdocs", "archive", "scora", "studies", name)
         if not os.path.exists(path):
             out[name] = (want, None)
             continue

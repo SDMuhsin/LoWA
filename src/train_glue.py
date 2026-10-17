@@ -660,6 +660,13 @@ def parse_args():
     parser.add_argument("--slr_beta_lr_ratio", type=float, default=1.0, help="R.111 ORACLE: lr multiplier for SLR's `beta` factor (the ZERO-init one), i.e. LoRA+'s lambda = lr_B/lr_A applied to a spectrally-compressed factored adapter. Default 1.0 = the shipped protocol, one LR for both factors. ANY value != 1.0 is an ORACLE spend and MUST be declared: PROCESS.md 5 test 4 disqualifies a swept constant in a FAIR arm, so an oracle result licenses only building an a-priori-derived matched arm, never a claim.")
     parser.add_argument("--slr_materialise", type=int, default=1, choices=[0,1], help="SLR: 1 = build dW densely (parity with the fourierftmerged comparator). 0 = factored Theta(b*d*r) apply, no m x n tensor. Same object either way (verify_slr G6).")
     parser.add_argument("--slr_target_modules", type=str, default=None, help="SLR: comma-separated target modules. PIN THIS (CARRY_FORWARD.md 9).")
+    parser.add_argument("--sgwa_k", type=int, default=256, help="SGWA: wavelet atoms (= trainable coefficients) per module. 256 x 24 = 6,144 = FourierFT k=256.")
+    parser.add_argument("--sgwa_K", type=int, default=3, help="SGWA: Chebyshev order = locality radius in hops (25-vertex diamond at K=3).")
+    parser.add_argument("--sgwa_scaling", type=float, default=None, help="SGWA: atom scale gamma. Default None DERIVES FourierFT's published atom 150/sqrt(2mn) (SCoRA's a-priori rule). Never swept.")
+    parser.add_argument("--sgwa_seed", type=int, default=777, help="SGWA: seeded randperm of the atom centres, FourierFT's own draw.")
+    parser.add_argument("--sgwa_materialise", type=int, default=1, choices=[0,1], help="SGWA: 1 = one index_add into a copy of W0 + one GEMM; 0 = sparse gather/mix/scatter, no m x n tensor. Same object (verify_sgwa G4/G5).")
+    parser.add_argument("--sgwa_sampled_grad", type=int, default=0, choices=[0,1], help="SGWA: 1 = sampled (SDDMM) coefficient backward on the merged path: only the k*s atom cells of G^T X are formed, never the dense m x n gradient. Same gradient to fp32 rounding (verify_sgwa G10). Default 0 = autograd's dense path, every past result.")
+    parser.add_argument("--sgwa_target_modules", type=str, default=None, help="SGWA: comma-separated target modules.")
     parser.add_argument("--rotft_k", type=int, default=256, help="R.26 ORACLE: n_frequency per module. Identical parameterisation to --fourierftmerged_k.")
     parser.add_argument("--rotft_scaling", type=float, default=150.0, help="R.26 ORACLE: FourierFT's `scaling`. NOT architecture-portable -- CARRY_FORWARD.md 1.1.")
     parser.add_argument("--rotft_seed", type=int, default=777, help="R.26 ORACLE: PEFT's random_loc_seed, the support draw. Same default as fourierftmerged so the arms share a support.")
@@ -760,7 +767,7 @@ def parse_args():
     # AdapterHub methods: lora, ia3, prefix
     # PEFT methods: dora, vera, fourierft
     # Custom methods: gbvera (gradient-balanced VeRA)
-    adapter_methods = ['lora', 'ia3', 'prefix', 'dora', 'vera', 'fourierftmerged', 'fourierftfast', 'fourierft', 'gbvera', 'spectral', 'adalora', 'dylora', 'sparseft', 'calib', 'tokenmix', 'coset', 'haar', 'bwht', 'offgrid', 'rotft', 'slr', 'shrinkft', 'loca', 'qwha']
+    adapter_methods = ['lora', 'ia3', 'prefix', 'dora', 'vera', 'fourierftmerged', 'fourierftfast', 'fourierft', 'gbvera', 'spectral', 'adalora', 'dylora', 'sparseft', 'calib', 'tokenmix', 'coset', 'haar', 'bwht', 'offgrid', 'rotft', 'slr', 'shrinkft', 'loca', 'qwha', 'sgwa']
     for method in adapter_methods:
         suffix = f'-{method}'
         if args.optimizer.lower().endswith(suffix):
@@ -941,6 +948,11 @@ def calculate_theoretical_memory(model: nn.Module, args: argparse.Namespace) -> 
             optimizer_state_params = optimizer_state_multiplier * trainable_params
 
         elif args.adapter_method == 'shrinkft':
+            # ACCOUNTING ONLY -- never build a model in this function (R.27a).
+            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            optimizer_state_params = optimizer_state_multiplier * trainable_params
+
+        elif args.adapter_method == 'sgwa':
             # ACCOUNTING ONLY -- never build a model in this function (R.27a).
             trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
             optimizer_state_params = optimizer_state_multiplier * trainable_params
@@ -1216,7 +1228,7 @@ def run_single_seed(base_args: argparse.Namespace, seed: int):
         # PEFT methods: dora, vera, fourierft
         # Custom methods: gbvera, spectral
         peft_methods = ['dora', 'vera', 'fourierft', 'adalora']
-        custom_methods = ['gbvera', 'spectral', 'dylora', 'sparseft', 'calib', 'coset', 'haar', 'bwht', 'fourierftfast', 'fourierftmerged', 'offgrid', 'rotft', 'slr', 'shrinkft', 'loca', 'qwha']
+        custom_methods = ['gbvera', 'spectral', 'dylora', 'sparseft', 'calib', 'coset', 'haar', 'bwht', 'fourierftfast', 'fourierftmerged', 'offgrid', 'rotft', 'slr', 'shrinkft', 'loca', 'qwha', 'sgwa']
 
         if args.adapter_method == 'spectral':
             # Use our Truncated DCT Factored Adaptation
@@ -1508,6 +1520,31 @@ def run_single_seed(base_args: argparse.Namespace, seed: int):
             )
             logger.info(f"ShrinkFT: adapted {len(model.adapted_modules)} modules, "
                         f"k={args.shrinkft_k}, q={args.shrinkft_q}, "
+                        f"adapter params={model.get_adapter_params():,}")
+            model.print_trainable_parameters()
+
+        elif args.adapter_method == 'sgwa':
+            # SGWA -- spectral graph wavelets on the dW index grid.  src/sgwa_adapter.py
+            logger.info("Initializing model for SGWA (spectral graph wavelet adapter)...")
+            if args.adapter_target_modules:
+                target_modules = [m.strip() for m in args.adapter_target_modules.split(",")]
+            elif args.sgwa_target_modules:
+                target_modules = [m.strip() for m in args.sgwa_target_modules.split(",")]
+            elif "roberta" in args.model_name_or_path.lower() or "bert" in args.model_name_or_path.lower():
+                target_modules = ["query", "value"]
+            else:
+                target_modules = ["q_proj", "v_proj"]
+            logger.info(f"SGWA target modules: {target_modules}")
+            from sgwa_adapter import get_sgwa_model
+            model = get_sgwa_model(
+                model=model, target_modules=target_modules,
+                k=args.sgwa_k, K=args.sgwa_K, scaling=args.sgwa_scaling,
+                seed=args.sgwa_seed, materialise=bool(args.sgwa_materialise),
+                sampled_grad=bool(args.sgwa_sampled_grad),
+                freeze_classifier_dense=args.freeze_classifier_dense,
+            )
+            logger.info(f"SGWA: adapted {len(model.adapted_modules)} modules, "
+                        f"k={args.sgwa_k}, K={args.sgwa_K}, "
                         f"adapter params={model.get_adapter_params():,}")
             model.print_trainable_parameters()
 
@@ -2608,6 +2645,7 @@ def run_single_seed(base_args: argparse.Namespace, seed: int):
     # 'None' three times over -- the [R.203] failure mode reintroduced inside its own fix.
     _haar_effective_scaling = 'N/A'
     _slr_effective_scaling = 'N/A'
+    _sgwa_effective_scaling = 'N/A'
     _loca_resolved_lli = 'N/A'
     try:
         for _m in model.modules():
@@ -2616,6 +2654,8 @@ def run_single_seed(base_args: argparse.Namespace, seed: int):
                 _haar_effective_scaling = float(_m.scaling)
             elif _tn == "SLRLinear" and _slr_effective_scaling == 'N/A':
                 _slr_effective_scaling = float(_m.scaling)
+            elif _tn == "SGWALinear" and _sgwa_effective_scaling == 'N/A':
+                _sgwa_effective_scaling = float(_m.scaling)
             elif _tn == "LoCALinear" and _loca_resolved_lli == 'N/A':
                 _loca_resolved_lli = int(_m.learn_location_iter)
     except Exception as _e:                       # never let bookkeeping kill a finished run
@@ -2648,6 +2688,7 @@ def run_single_seed(base_args: argparse.Namespace, seed: int):
         # here because the results row is assembled in main(), not in this function.
         "haar_effective_scaling": _haar_effective_scaling,
         "slr_effective_scaling": _slr_effective_scaling,
+        "sgwa_effective_scaling": _sgwa_effective_scaling,
         "loca_resolved_lli": _loca_resolved_lli,
     }
 
@@ -2673,6 +2714,7 @@ def main():
     # [R.236 4.2] carried out of run_single_seed; see its return dict.
     _haar_effective_scaling = first_res.get("haar_effective_scaling", 'N/A')
     _slr_effective_scaling = first_res.get("slr_effective_scaling", 'N/A')
+    _sgwa_effective_scaling = first_res.get("sgwa_effective_scaling", 'N/A')
     _loca_resolved_lli = first_res.get("loca_resolved_lli", 'N/A')
     metric_keys = ["accuracy", "f1", "matthews_correlation", "pearson", "spearmanr"]
     median_metrics = {}
@@ -2722,6 +2764,7 @@ def main():
         "haar_k", "haar_mu", "haar_scaling", "haar_fourierft_scaling",
         "haar_init_std", "haar_seed",
         "slr_scaling", "slr_seed", "slr_init_norm", "slr_basis", "slr_materialise",
+        "sgwa_k", "sgwa_K", "sgwa_scaling", "sgwa_seed", "sgwa_materialise",
         "max_length",
         "per_layer_opt", "gradient_checkpointing", "accuracy", "f1", "matthews_correlation", "pearson", "spearmanr",
         "total_training_time_sec", "param_mem_mib", "opt_mem_mib", "runtime_mem_mib",
@@ -2847,6 +2890,11 @@ def main():
         "slr_init_norm": args.slr_init_norm if args.adapter_method == 'slr' else 'N/A',
         "slr_basis": args.slr_basis if args.adapter_method == 'slr' else 'N/A',
         "slr_materialise": args.slr_materialise if args.adapter_method == 'slr' else 'N/A',
+        "sgwa_k": args.sgwa_k if args.adapter_method == 'sgwa' else 'N/A',
+        "sgwa_K": args.sgwa_K if args.adapter_method == 'sgwa' else 'N/A',
+        "sgwa_scaling": _sgwa_effective_scaling if args.adapter_method == 'sgwa' else 'N/A',
+        "sgwa_seed": args.sgwa_seed if args.adapter_method == 'sgwa' else 'N/A',
+        "sgwa_materialise": args.sgwa_materialise if args.adapter_method == 'sgwa' else 'N/A',
         "max_length": args.max_length,
         "calib_basis": args.calib_basis if args.adapter_method == 'calib' else 'N/A',
         "calib_k": args.calib_k if args.adapter_method == 'calib' else 'N/A',

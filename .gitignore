@@ -47,4 +47,6 @@ scripts/build_prl_tables.py
 scripts/build_spl_tables.py
 scripts/build_ladder_figure.py
 scripts/build_architecture_data.py
-scripts/r311_camera_ready.py
+iscripts/r311_camera_ready.py
+
+.secret.txt

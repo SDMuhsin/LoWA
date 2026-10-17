@@ -1,0 +1,91 @@
+`timescale 1ns/1ps
+// tb_fp_i2f: streams vectors from +vec=<file> (tb/fp/gen_vectors.py, expected values from the L1
+// entry points) into fp_i2f one per cycle and compares every output bit for bit (!==), in order,
+// exactly LATENCY = STAGES cycles later (checked).  Also checks that exactly one output appears per input.
+// Final line: PASS i2f <n> vectors | FAIL i2f <bad>/<n> mismatches.
+module tb_fp_i2f;
+    parameter STAGES = 1;
+    reg clk = 1'b0, rst_n = 1'b0;
+    always #20 clk = ~clk;
+    reg         in_valid = 1'b0;
+    reg  [31:0] x;
+    wire        out_valid;
+    wire [31:0] y;
+`ifdef GLS
+    fp_i2f dut (                          // synthesised netlist (gls.v)
+`else
+    fp_i2f #(.STAGES(STAGES)) dut (
+`endif
+       .clk(clk), .rst_n(rst_n), .in_valid(in_valid), .x(x),
+        .out_valid(out_valid), .y(y));
+
+    reg  [31:0] v_x;
+    reg  [31:0] v_y;
+    reg  [31:0] q_x [0:63];
+    reg  [31:0] q_y [0:63];
+    integer q_t [0:63];
+    integer wp = 0, rp = 0, n_bad = 0, fd, rc, cyc = 0, last_in = 0;
+    reg [1023:0] fname;
+    reg done = 1'b0;
+
+    always @(posedge clk) begin
+        cyc <= cyc + 1;
+        if (rst_n && out_valid) begin
+            if (rp >= wp) begin
+                n_bad = n_bad + 1;
+                $display("EXTRA output at cycle %0d", cyc);
+            end else begin
+                if ((y !== q_y[rp[5:0]])) begin
+                    if (n_bad < 10)
+                        $display("MISMATCH #%0d x=%h got y=%h(want %h)", rp, q_x[rp[5:0]], y, q_y[rp[5:0]]);
+                    n_bad = n_bad + 1;
+                end
+                if (cyc - q_t[rp[5:0]] != STAGES) begin
+                    if (n_bad < 10) $display("LATENCY #%0d: %0d cycles, want %0d", rp, cyc - q_t[rp[5:0]], STAGES);
+                    n_bad = n_bad + 1;
+                end
+                rp = rp + 1;
+            end
+        end
+    end
+
+    initial begin
+        if (!$value$plusargs("vec=%s", fname)) begin
+            $display("FAIL i2f no +vec=<file>");
+            $finish;
+        end
+        fd = $fopen(fname, "r");
+        if (fd == 0) begin
+            $display("FAIL i2f cannot open vectors");
+            $finish;
+        end
+        repeat (3) @(negedge clk);
+        rst_n = 1'b1;
+        while (!$feof(fd)) begin
+            rc = $fscanf(fd, "%h %h\n", v_x, v_y);
+            if (rc == 2) begin
+                @(negedge clk);
+                if (wp - rp > 60) begin
+                    $display("FAIL i2f output queue overflow (no outputs?)");
+                    $finish;
+                end
+                in_valid = 1'b1; x = v_x;
+                q_x[wp[5:0]] = v_x; q_y[wp[5:0]] = v_y;
+                q_t[wp[5:0]] = cyc;
+                wp = wp + 1;
+                last_in = cyc;
+            end
+        end
+        @(negedge clk);
+        in_valid = 1'b0;
+        repeat (STAGES + 4) @(negedge clk);
+        if (rp != wp) begin
+            $display("MISSING outputs: %0d of %0d", wp - rp, wp);
+            n_bad = n_bad + (wp - rp);
+        end
+        if (wp == 0) $display("FAIL i2f 0/0 no vectors read");
+        else if (n_bad == 0) $display("PASS i2f %0d vectors", wp);
+        else $display("FAIL i2f %0d/%0d mismatches", n_bad, wp);
+        $finish;
+    end
+endmodule
