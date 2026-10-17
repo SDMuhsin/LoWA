@@ -109,3 +109,12 @@ src/rtl/
   125 C**; limiters are FMA stage 1 and the GEMM feeder bank-read path. If full16 top-level synthesis cannot
   close 4.0 ns without RTL changes, fall back to 5.0 ns and report it; no pipeline change without PI sign-off.
   Skipped on the tsmc65 backend (simulation 60-75x slower): real_ffn1_256 and one real_ln_fwd sensitivity row.
+- R13 (2026-10-17) P8b gate (docs/p8b_report.md): every unit except gm16 (-2.14 ns), vu16 (-1.08 ns) and mm
+  (-0.08 ns) meets 4.0 ns at ss. PI signs off the proposed RTL timing repairs: gm feeder write-request
+  register (+ bank read-address stage if needed), vu broadcast register stage + registered lane outputs
+  (incl. sfu_out_cnt), mm seed register + decoupled rd_req_ready. Conditions: numerics stay bit-exact
+  (lint, test-unit, test-e2e pass unchanged vs L1); cycle-count deltas are measured and reported; any
+  latency the compiler or sequencer assumes is updated, not worked around; no change to the clock or to
+  constraints. Block abstractions as the parent-link method are accepted. Phases renamed: P8c = timing
+  repair + rerun of gm16/vu16/mm (+ reconcile on-chip capacity: RTL 146 KiB vs memory_map.md 89 KiB);
+  P8d = top-level full16 synthesis + Formality + pre-layout PT/PP + final report.
