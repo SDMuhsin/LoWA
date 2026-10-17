@@ -26,11 +26,13 @@ proc t65_pname {obj} {
     }
     return [get_object_name $obj]
 }
+proc t65_n {v {f %.4f}} { expr {[string is double -strict $v] ? [format $f $v] : "NA"} }
 proc t65_path_line {p} {
+    if {[sizeof_collection $p] == 0} { return "none" }
     set n 0
     foreach_in_collection pt [get_attribute $p points] { incr n }
-    return [format "%s -> %s  slack %.4f  arrival %.3f  points %d" [t65_pname [get_attribute $p startpoint]] \
-        [t65_pname [get_attribute $p endpoint]] [get_attribute $p slack] [get_attribute $p arrival] $n]
+    return [format "%s -> %s  slack %s  arrival %s  points %d" [t65_pname [get_attribute $p startpoint]] \
+        [t65_pname [get_attribute $p endpoint]] [t65_n [get_attribute $p slack]] [t65_n [get_attribute $p arrival] %.3f] $n]
 }
 proc t65_slack {type {to ""}} {
     if {$to eq ""} {
@@ -47,15 +49,15 @@ proc t65_slack {type {to ""}} {
 
 proc t65_put_timing {fh} {
     lassign [t65_slack max] wns tns nv p
-    puts $fh [format "setup_wns %.4f setup_tns %.3f setup_nviol %d" $wns $tns $nv]
+    puts $fh [format "setup_wns %s setup_tns %.3f setup_nviol %d" [t65_n $wns] $tns $nv]
     puts $fh "setup_path [t65_path_line $p]"
     # latch endpoints that borrow sit at slack 0: also the worst path into flops / outputs
     set ends [add_to_collection [all_registers -edge_triggered -data_pins] [all_outputs]]
     lassign [t65_slack max $ends] fw ft fn fp
-    puts $fh [format "flop_wns %.4f flop_tns %.3f flop_nviol %d" $fw $ft $fn]
+    puts $fh [format "flop_wns %s flop_tns %.3f flop_nviol %d" [t65_n $fw] $ft $fn]
     puts $fh "flop_path [t65_path_line $fp]"
     lassign [t65_slack min] hw ht hn hp
-    puts $fh [format "hold_wns %.4f hold_tns %.3f hold_nviol %d" $hw $ht $hn]
+    puts $fh [format "hold_wns %s hold_tns %.3f hold_nviol %d" [t65_n $hw] $ht $hn]
     # the five worst flop / output endpoints (distinct; borrowing latch endpoints all sit at 0), to see which
     # stages limit the clock
     set i 0
@@ -139,6 +141,12 @@ proc t65_read_summary {f} {
 }
 proc t65_unit_summary {path block design params period corner topo io kid_design rpt t0 {abs 0} {hroot ""}} {
     set fh [open $path w]
+    if {[catch {t65_unit_summary_body $fh $block $design $params $period $corner $topo $io $kid_design $rpt $t0 $abs $hroot} e]} {
+        puts $fh "summary_error $e :: [join [lrange [split $::errorInfo \n] 0 6] { | }]"
+    }
+    close $fh
+}
+proc t65_unit_summary_body {fh block design params period corner topo io kid_design rpt t0 abs hroot} {
     puts $fh "block $block top $design params {$params}"
     puts $fh "period_ns $period corner $corner mode [expr {$topo ? {topographical} : {wire-load}}] io_pct $io hold_corner ff"
     set nand2 [lindex [get_attribute [get_lib_cells */$::T65_NAND2] area] 0]
@@ -192,5 +200,4 @@ proc t65_unit_summary {path block design params period corner topo io kid_design
     catch {set cpu [cputime]}
     catch {set mem [mem]}
     puts $fh [format "dc_wall_s %d dc_cpu_s %s dc_mem_kb %s" [expr {[clock seconds] - $t0}] $cpu $mem]
-    close $fh
 }

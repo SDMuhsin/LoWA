@@ -8,7 +8,8 @@
 # io_pct: input / output delay on the block's own ports in % of the period (sdc/gen_sdc.tcl).  Units use 20;
 #   bank leaves use 40 because their address comes through the parent's control logic (tighter, not looser).
 # link (optional 6th column): `abs` = children are linked as block abstractions (interface logic only); every
-#   parent uses it.  Linking full netlists with dont_touch was tried first: DC topographical then places the
+#   parent uses it except lane (its two banks are linked as full dont_touch netlists, so vu16 does not hold
+#   the bank256 abstraction twice; lane closes 4.0 ns that way).  Linking full netlists with dont_touch was tried first: DC topographical then places the
 #   children's cells spread over the parent's whole area and, the children being dont_touch, cannot re-buffer
 #   the longer estimated wires (vu16 -2.49 ns and mm -1.97 ns inside lanes / mask generators that close
 #   alone).  With abstractions each child's internal paths are timed in its own run (a compact region, as a
@@ -30,16 +31,13 @@ bank512  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9                -              
 bank768  mm_sram_bank  WORDS=>768,WIDTH=>32,AW=>10               -                       40
 # ---- gemm: 16 x 16 PEs, NSFU 16
 pe       gm_pe         FMA_STAGES=>2,LAMBDA=>4,QW=>2             -                       20
-# gm_top 16x16 holds 24,576 latch words (x feeder, w feeder, drain: 8,192 each) and 256 PEs (~3M cells), too big
-# for one run: each sub-unit is a block of its own, taken from gm16's elaboration (`@gm16/<instance>`)
-gmarr    @gm16/u_array -                                         pe                      20 abs
-gmxf     @gm16/u_xfeed -                                         bank512                 20 abs
-gmwf     @gm16/u_wfeed -                                         bank256                 20 abs
-gmdr     @gm16/u_drain -                                         bank512                 20 abs
-gmep     @gm16/u_epilogue -                                      -                       20
-gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                gmarr,gmxf,gmwf,gmdr,gmep 20 abs
+# gm_top 16x16 holds 24,576 latch words (x feeder, w feeder, drain: 8,192 each) and 256 PEs (~3M cells): the PEs
+# and banks are linked as block abstractions, everything else (array glue, feeders, drain, epilogue, loader,
+# ctrl) is compiled in the gm16 run, so cross-sub-unit paths (ctrl -> feeder -> bank address) are optimised
+# together.  (`@gm16/<instance>` blocks would split it further but nest abstractions; not used.)
+gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                pe,bank512,bank256      20 abs
 # ---- vec: V = 16 lanes
-lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20 abs
+lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20
 vu16     vu_top        -                                         lane,bank256            20 abs
 # ---- lowa
 lw       lw_top        -                                         bank256,bank512,bank768 20 abs

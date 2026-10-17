@@ -64,7 +64,7 @@ puts "T65_DESIGN $design"
 # link `abs` (6th column): children are read as their block abstractions (interface logic only; the
 # abstraction is written into every block's .ddc), for parents whose full netlist would not fit in memory.
 proc t65_tokens {n} { lsort [split $n _] }
-set abs_refs {}
+set abs_refs {}; set abs_designs {}
 set kid_design [dict create]
 foreach k $kids {
     set f $hroot/$k/design.txt
@@ -82,7 +82,9 @@ foreach k $kids {
     dict set kid_design $k $pn
     remove_design $pn
     if {$abs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
+    set before [get_object_name [get_designs]]
     read_ddc $hroot/$k/$k.ddc
+    if {$abs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
     if {$pn ne $kn} { rename_design $kn $pn }
 }
 current_design $design
@@ -111,17 +113,19 @@ compile_ultra -no_autoungroup -gate_clock
 if {$incr} { compile_ultra -incremental -no_autoungroup }
 
 # ---------------------------------------------------------------- every sub-design gets the block prefix
-# (children included: their own sub-designs already carry the child's prefix, so names nest, e.g.
-#  gmdr__mm_sram_bank_WORDS512_WIDTH32_AW9 and gmdr__bank512__mm_icg)
+# (children linked as full netlists included: their own sub-designs already carry the child's prefix, so names
+#  nest, e.g. lane__mm_sram_bank_WORDS256_WIDTH32_AW8 and lane__bank256__mm_icg; block abstractions keep
+#  their names, so a parent never links two abstractions that contain the same nested abstraction)
 set refs [lsort -unique [get_attribute -quiet [get_cells -quiet -hierarchical -filter is_hierarchical==true] ref_name]]
 set nren 0
 foreach d $refs {
     if {[string match "${block}__*" $d] || $d eq $design} continue
+    if {$d in $abs_designs} continue       ;# block abstractions cannot be renamed (UIMG-48)
     rename_design $d ${block}__$d
     incr nren
 }
 puts "T65_RENAMED $nren"
-dict for {k kn} $kid_design { dict set kid_design $k ${block}__$kn }
+if {!$abs} { dict for {k kn} $kid_design { dict set kid_design $k ${block}__$kn } }
 current_design $design
 change_names -rules verilog -hierarchy
 set design [get_object_name [current_design]]
