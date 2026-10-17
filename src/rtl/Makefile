@@ -95,8 +95,8 @@ test-rng-quick:
 	$(EDA) $(PY) tb/rng/run_tests.py --quick
 
 ## P8a: the same memory tests on the tsmc65 latch-register-file backend (behavioural clock gate) and on the gf180 macros.
-## The latch RF simulates ~100x slower than the generic array, so test-mem-t65 defaults to the --quick set (all unit cases +
-## the non-real integration cases); T65_MEM_ARGS= runs the real cases too (real_ffn1_256 alone is estimated at > 10 h).
+## The latch RF simulates 60-75x slower than the generic array, so test-mem-t65 defaults to the --quick set (all unit cases +
+## the non-real integration cases); T65_MEM_ARGS= runs the real cases too (real_ffn1_256 alone: about 10 h per DRAM setting).
 T65_MEM_ARGS ?= --quick
 test-mem-t65:
 	$(EDA) $(PY) tb/mem/run_tests.py --tech tsmc65 $(T65_MEM_ARGS)
