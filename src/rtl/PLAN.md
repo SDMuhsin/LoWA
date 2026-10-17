@@ -90,3 +90,22 @@ src/rtl/
   route is dropped; existing GF180 synthesis/STA numbers remain as an open-source sanity check. After P7, work
   pauses for the user's instruction; P8 is to be redefined as a TSMC-65 porting phase (SRAM-compiler
   abstraction, buffer/clock design-space pass, Genus/Innovus scripts + SDC, handoff package).
+- R11 (2026-10-17) P8 = TSMC 65 nm port through synthesis (DC topographical + Formality + pre-layout PT/PP on
+  the CMC server; template: GanAccelAsic src_int8_tsmc65). Decisions:
+  (a) Memory: no SRAM compiler is usable, so `mm_sram_bank` gets selectable technology backends behind its
+      unchanged port contract (same read latency, same write/byte-enable semantics): `gf180` (current macro),
+      `generic` (behavioural, the simulation default) and `tsmc65` (latch register file with clock-gated write,
+      as in the template's latch RF). Capacity stays at full16 geometry (89 KiB); nothing is shrunk.
+      Library cell names live only in git-ignored site files.
+  (b) Array: full16 (16x16 PEs, V=16) is the synthesised configuration (R4); 8x8 is a reported row only.
+  (c) Clock: provisional target 200 MHz (5.0 ns) at ss 0.9 V 125 C. P8a measures block-level slack at
+      5.0 / 4.0 / 6.67 ns and the PI then fixes the target. RTL pipeline changes need PI sign-off and must
+      stay bit-exact (L2 regressions re-run).
+  (d) Synthesis is hierarchical (each unique block compiled once, then the top), sized for a 16-thread /
+      30 GB shared server, one big job at a time.
+  Split: P8a memory backends + flow/tsmc65 scaffold + block-level clock scout; P8b all units at the fixed
+  clock; P8c top-level full16 synthesis + Formality + pre-layout PT/PP + report.
+- R12 (2026-10-17) P8a gate passed (docs/p8a_report.md). Clock target fixed at **4.0 ns (250 MHz) at ss 0.9 V
+  125 C**; limiters are FMA stage 1 and the GEMM feeder bank-read path. If full16 top-level synthesis cannot
+  close 4.0 ns without RTL changes, fall back to 5.0 ns and report it; no pipeline change without PI sign-off.
+  Skipped on the tsmc65 backend (simulation 60-75x slower): real_ffn1_256 and one real_ln_fwd sensitivity row.
