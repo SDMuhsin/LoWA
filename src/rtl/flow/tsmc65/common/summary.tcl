@@ -177,7 +177,7 @@ proc t65_unit_summary_body {fh block design params period corner topo io kid_des
         puts $fh [format "own_area_um2 %.1f cells %d (outside the abstracted children)" $ta [sizeof_collection $own]]
         dict for {k kn} $kid_design {
             set n [sizeof_collection [get_cells -quiet -hierarchical -filter ref_name==$kn]]
-            set cs [t65_read_summary $hroot/$k/summary.txt]
+            set cs [t65_read_summary [t65_kid_dir $hroot $k]/summary.txt]
             set ta [expr {$ta + $n * [dict get $cs area_um2]}]
             set tm [expr {$tm + $n * [dict get $cs mem_area_um2]}]
             set tl [expr {$tl + $n * [dict get $cs latches]}]

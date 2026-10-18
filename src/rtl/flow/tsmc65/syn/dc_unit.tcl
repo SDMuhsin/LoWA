@@ -85,7 +85,7 @@ if {[envd T65_ABS_MACRO 0]} { set_app_var block_abstraction_compute_area_as_macr
 set kid_design [dict create]
 foreach k $kids {
     set kabs [expr {$abs && $k ni $full_kids}]
-    set f $hroot/$k/design.txt
+    set f [t65_kid_dir $hroot $k]/design.txt
     if {![file exists $f]} { puts "T65_ERROR child $k not built ($f)"; exit 1 }
     set fh [open $f]; set kn [string trim [read $fh]]; close $fh
     set pn $kn
@@ -95,7 +95,7 @@ foreach k $kids {
     if {[t65_hier $k copy] && [string match "${k}__*" $kn] && [sizeof_collection [get_designs -quiet $orig]]} {
         if {$kabs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
         set before [get_object_name [get_designs]]
-        read_ddc $hroot/$k/$k.ddc
+        read_ddc [t65_kid_dir $hroot $k]/$k.ddc
         if {$kabs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
         current_design $design            ;# read_ddc made the child current
         set oc [get_cells -quiet -hierarchical -filter "ref_name==$orig"]
@@ -118,7 +118,7 @@ foreach k $kids {
     remove_design $pn
     if {$kabs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
     set before [get_object_name [get_designs]]
-    read_ddc $hroot/$k/$k.ddc
+    read_ddc [t65_kid_dir $hroot $k]/$k.ddc
     if {$kabs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
     if {$pn ne $kn} { rename_design $kn $pn }
 }
