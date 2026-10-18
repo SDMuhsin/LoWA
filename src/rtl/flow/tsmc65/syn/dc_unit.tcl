@@ -122,24 +122,28 @@ foreach k $kids {
     if {$kabs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
     if {$pn ne $kn} { rename_design $kn $pn }
 }
-# P8d: a child's .ddc holds the child's own block abstraction but not the per-parent bank copies it links
-# (`copy` grandchildren, e.g. bank512_gm inside gm16): read those .ddc files too, as abstractions, so that the
-# chip-level link resolves them (each copy name is unique to its parent, so nothing collides)
-proc t65_copy_desc {b} {
+# P8d: a child's .ddc holds the child's own block abstraction but not the abstractions it links itself (its
+# grandchildren here: pe in gm16, lane in vu16, rng9 / rng3 in mm, the per-parent bank copies).  Without them the
+# link resolves those references to this run's own generic elaboration (unmapped, unplaced).  So every block below
+# an abstracted child, through abstracted parents, is read from its own .ddc as an abstraction, replacing the
+# generic design of the same name.
+proc t65_abs_desc {b} {
     set l {}
     foreach k [t65_hier $b children] {
-        if {[t65_hier $k copy]} { lappend l $k }
-        if {[t65_hier $k link] eq "abs"} { set l [concat $l [t65_copy_desc $k]] }
+        lappend l $k
+        if {[t65_hier $k link] eq "abs"} { set l [concat $l [t65_abs_desc $k]] }
     }
     return $l
 }
 if {$abs} {
     foreach k $kids {
-        if {[t65_hier $k link] ne "abs"} continue
-        foreach g [lsort -unique [t65_copy_desc $k]] {
+        if {[t65_hier $k link] ne "abs" || $k in $full_kids} continue
+        foreach g [lsort -unique [t65_abs_desc $k]] {
+            if {$g in $kids} continue
             set gd [t65_kid_dir $hroot $g]
             set fh [open $gd/design.txt]; set gn [string trim [read $fh]]; close $fh
-            if {[sizeof_collection [get_designs -quiet $gn]]} continue
+            if {$gn in $abs_designs} continue
+            if {[sizeof_collection [get_designs -quiet $gn]]} { remove_design $gn }
             lappend abs_refs $gn; set_top_implementation_options -block_references $abs_refs
             set before [get_object_name [get_designs]]
             read_ddc $gd/$g.ddc
