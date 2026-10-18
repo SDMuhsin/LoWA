@@ -131,7 +131,7 @@ if {[envd T65_PT_AREA 0]} {
 if {$power ne "none"} {
     if {$power eq "saif"} {
         foreach {f strip inst} $::env(T65_SAIF) {
-            if {$inst eq ""} { redirect -append $out/rpt_saif.rpt { read_saif -auto_map_names -strip_path $strip $f } } else { redirect -append $out/rpt_saif.rpt { read_saif -auto_map_names -strip_path $strip -path $inst $f } }
+            if {$inst eq ""} { redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip $f } } else { redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip -path $inst $f } }
         }
         redirect $out/rpt_switching.rpt { report_switching_activity -list_not_annotated -max_objects 20 }
     } else {

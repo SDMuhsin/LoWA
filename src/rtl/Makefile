@@ -235,7 +235,7 @@ syn65-exit:
 	$(T65) run 'mkdir -p build/tsmc65; nohup flow/tsmc65/syn/run_exit.sh > build/tsmc65/hier_exit.log 2>&1 < /dev/null & echo launched exit'
 
 p8d65:
-	$(T65) run 'mkdir -p build/tsmc65; T65_SAIF_GM=$$PWD/build/tsmc65/saif/gm_real_dgelu/dut.saif T65_SAIF_VU=$$PWD/build/tsmc65/saif/vu_real_ln_fwd/dut.saif nohup flow/tsmc65/run_p8d.sh $(P8D_PERIOD) $(P8D_STAGES) > build/tsmc65/p8d.log 2>&1 < /dev/null & echo launched p8d'
+	$(T65) run 'mkdir -p build/tsmc65; T65_SAIF_GM=$$PWD/build/tsmc65/saif/gm_real_dgelu/dut_g.saif T65_SAIF_VU=$$PWD/build/tsmc65/saif/vu_real_ln_fwd/dut_g.saif nohup flow/tsmc65/run_p8d.sh $(P8D_PERIOD) $(P8D_STAGES) > build/tsmc65/p8d.log 2>&1 < /dev/null & echo launched p8d'
 
 saif65-gm:
 	$(T65) run 'nohup flow/tsmc65/sim/run_saif.sh gm build/tsmc65/vec/gm real_dgelu $(SAIF_CYC) $(P8D_PERIOD) > build/tsmc65/saif_gm.log 2>&1 < /dev/null & echo launched saif gm'
