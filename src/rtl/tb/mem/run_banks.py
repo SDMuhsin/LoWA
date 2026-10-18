@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """make test-mem-banks (P8a): the mm_sram_bank port contract on every technology backend (generic, gf180, tsmc65 with the
-behavioural clock gate), tb/mem/tb_mm_sram_bank.sv vs its reference array, in Icarus and Verilator, three bank shapes.
+behavioural clock gate, tsmc65_sram with the behavioural macro stand-in), tb/mem/tb_mm_sram_bank.sv vs its reference array, in Icarus and Verilator, three bank shapes.
 gf180 is checked on read data only (its macros update q on a write to the last-read row; the hold check is off).
 Every run has a fixed op count and a wall-clock timeout.  Summary: build/test-banks/summary.txt, exit 1 on any FAIL."""
 import glob
@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "build", "test-banks")
 HW = " ".join(os.path.relpath(f, ROOT) for f in sorted(glob.glob(os.path.join(ROOT, "hw", "**", "*.v"), recursive=True)))
-TECH = {"generic": 0, "gf180": 1, "tsmc65": 2}
+TECH = {"generic": 0, "gf180": 1, "tsmc65": 2, "tsmc65_sram": 3}
 SHAPES = [(768, 32, 10), (256, 32, 8), (300, 24, 9)]
 N = 100000
 
