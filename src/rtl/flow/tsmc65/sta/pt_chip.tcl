@@ -1,0 +1,147 @@
+# PrimeTime of the full chip netlist (pre-layout, ideal clocks), optionally with PrimePower average power.
+# The chip run (syn/dc_unit.tcl, block `chip`) links its units as block abstractions, so its netlist does not
+# define them: this script reads the chip netlist plus every block netlist below it (a child linked as `abs` is
+# a separate netlist; a child linked as a full netlist is already inside its parent's), links the flat design
+# and annotates each block's DC topographical parasitics (ss RC estimate) on every instance of that block.
+# Environment (sta/run_pt_chip.sh):
+#   T65_ROOT, T65_PERIOD, T65_CORNER (ss | tt | ff), T65_PT_OUT (output dir), T65_KID_TAG (as for DC)
+#   T65_BLOCK top block (chip)    T65_PT_AREA 1: per-unit cell / area / register counts
+#   T65_POWER  none | vectorless | saif     T65_SAIF  "file strip_path instance_path ..." (saif mode)
+#   T65_TR / T65_SP  vectorless default toggle rate (per clock cycle) / static probability (0.1 / 0.5)
+set t0 [clock seconds]
+set flow $::env(T65_ROOT)/flow/tsmc65
+source $flow/common/site.tcl
+source $flow/common/hier.tcl
+source $flow/common/summary.tcl
+t65_hier_load
+proc envd {k d} { expr {[info exists ::env($k)] ? $::env($k) : $d} }
+set top    [envd T65_BLOCK chip]
+set period $::env(T65_PERIOD)
+set corner $::env(T65_CORNER)
+set out    $::env(T65_PT_OUT)
+set power  [envd T65_POWER none]
+set hroot  $::env(T65_ROOT)/build/tsmc65/hier
+file mkdir $out
+set_host_options -max_cores [envd T65_CORES 8]
+if {$power ne "none"} {
+    set_app_var power_enable_analysis true
+    set_app_var power_analysis_mode averaged
+}
+# blocks whose netlist is read: the top and, recursively, every child its parent links as an abstraction
+proc t65_tree {b} {
+    set l [list $b]
+    if {[t65_hier $b link] eq "abs"} { foreach k [t65_hier $b children] { set l [concat $l [t65_tree $k]] } }
+    return $l
+}
+set blocks [lsort -unique [t65_tree $top]]
+set files {}; set bdesign [dict create]; set bdir [dict create]
+foreach b $blocks {
+    set d [expr {$b eq $top ? "$hroot/$top" : [t65_kid_dir $hroot $b]}]
+    set fh [open $d/design.txt]; dict set bdesign $b [string trim [read $fh]]; close $fh
+    dict set bdir $b $d
+    lappend files $d/$b.v
+}
+set_app_var search_path [concat . $::T65_LIBDIR]
+set_app_var link_path [list * [t65_db $corner]]
+read_verilog $files
+current_design [dict get $bdesign $top]
+link_design
+set ::argv [list $period $corner $out/chip_$corner.sdc [t65_hier $top io]]
+source $flow/sdc/gen_sdc.tcl
+source $out/chip_$corner.sdc
+
+# parasitics: each block's own SPEF on each of its instances
+set npar 0; set nparf 0
+foreach b $blocks {
+    set f [dict get $bdir $b]/$b.spef
+    if {![file exists $f]} { puts "T65_NOTE no spef for $b"; continue }
+    if {$b eq $top} {
+        if {[catch {read_parasitics -format spef $f} e]} { incr nparf; puts "T65_NOTE spef $b: $e" } else { incr npar }
+        continue
+    }
+    foreach_in_collection c [get_cells -quiet -hierarchical -filter "ref_name==[dict get $bdesign $b]"] {
+        if {[catch {read_parasitics -format spef -path [get_object_name $c] $f} e]} { incr nparf } else { incr npar }
+    }
+}
+update_timing
+redirect $out/rpt_annot_$corner.rpt { report_annotated_parasitics -list_not_annotated -max_nets 20 }
+
+set fh [open $out/summary_$corner.txt w]
+puts $fh "block $top corner $corner period_ns $period netlists [llength $files] ([join $blocks ,]) clocks ideal (pre-CTS)"
+puts $fh "parasitics dc_topo_ss_estimate spef_reads $npar failed $nparf"
+set r [open $out/rpt_annot_$corner.rpt]
+foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Total|.*\|\s*[0-9]+\s*\|)} $line]} { puts $fh "annot [string trim $line]" } }
+close $r
+puts $fh "leaf_cells [sizeof_collection [get_cells -quiet -hierarchical -filter is_hierarchical==false]]"
+t65_put_timing $fh
+# worst setup / hold slack per unit instance (endpoints inside the instance) and at the top level
+set regd [all_registers -data_pins]
+set units [get_cells -quiet -filter is_hierarchical==true]
+foreach_in_collection u $units {
+    set un [get_object_name $u]
+    set e [filter_collection $regd "full_name=~$un/*"]
+    if {[sizeof_collection $e] == 0} continue
+    set ps [get_timing_paths -delay_type max -max_paths 1 -to $e]
+    set ph [get_timing_paths -delay_type min -max_paths 1 -to $e]
+    set nv [sizeof_collection [get_timing_paths -delay_type max -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -to $e]]
+    set nh [sizeof_collection [get_timing_paths -delay_type min -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -to $e]]
+    puts $fh [format "unit %s ref %s endpoints %d setup_wns %s setup_nviol %d hold_wns %s hold_nviol %d" $un \
+        [get_attribute $u ref_name] [sizeof_collection $e] [t65_n [get_attribute $ps slack]] $nv [t65_n [get_attribute $ph slack]] $nh]
+}
+set e [filter_collection $regd "full_name!~*/*"]
+if {[sizeof_collection $e]} {
+    puts $fh [format "unit top_glue endpoints %d setup_wns %s hold_wns %s" [sizeof_collection $e] \
+        [t65_n [get_attribute [get_timing_paths -delay_type max -max_paths 1 -to $e] slack]] \
+        [t65_n [get_attribute [get_timing_paths -delay_type min -max_paths 1 -to $e] slack]]]
+}
+foreach {lbl io} [list in_to_reg [all_inputs] reg_to_out [all_outputs]] {
+    if {$lbl eq "in_to_reg"} { set p [get_timing_paths -delay_type max -max_paths 1 -from $io] } else { set p [get_timing_paths -delay_type max -max_paths 1 -to $io] }
+    puts $fh "io $lbl [t65_path_line $p]"
+}
+if {[envd T65_PT_AREA 0]} {
+    # per unit instance (and the top-level glue): leaf cells, cell area, flops and latches (ICG latches excluded)
+    proc lsum {l} { set s 0.0; foreach v $l { if {$v ne ""} { set s [expr {$s + $v}] } }; return $s }
+    set icg [get_cells -quiet -hierarchical -filter "is_hierarchical==false && ref_name=~$::T65_ICG_PATTERN"]
+    set allff [remove_from_collection [all_registers -edge_triggered] $icg]
+    set alllat [remove_from_collection [all_registers -level_sensitive] $icg]
+    set rows {}
+    foreach_in_collection u $units { lappend rows [get_object_name $u] "full_name=~[get_object_name $u]/*" }
+    lappend rows top_glue "full_name!~*/*"
+    foreach {un flt} $rows {
+        set c [get_cells -quiet -hierarchical -filter "is_hierarchical==false && $flt"]
+        puts $fh [format "area_unit %s cells %d area_um2 %.1f flops %d latches %d icg %d" $un [sizeof_collection $c] \
+            [lsum [get_attribute -quiet $c area]] [sizeof_collection [filter_collection $allff $flt]] \
+            [sizeof_collection [filter_collection $alllat $flt]] [sizeof_collection [filter_collection $icg $flt]]]
+    }
+}
+if {$power ne "none"} {
+    if {$power eq "saif"} {
+        foreach {f strip inst} $::env(T65_SAIF) {
+            redirect -append $out/rpt_saif.rpt { read_saif -auto_map_names -strip_path $strip -path $inst $f }
+        }
+        redirect $out/rpt_switching.rpt { report_switching_activity -list_not_annotated -max_objects 20 }
+    } else {
+        set_app_var power_default_toggle_rate [envd T65_TR 0.1]
+        set_app_var power_default_static_probability [envd T65_SP 0.5]
+        set_app_var power_default_toggle_rate_type fastest_clock
+        redirect $out/rpt_switching.rpt { report_switching_activity }
+    }
+    update_power
+    redirect $out/rpt_power_$corner.rpt { report_power -nosplit }
+    redirect $out/rpt_power_hier_$corner.rpt { report_power -nosplit -hierarchy -levels 1 }
+    puts $fh "power_mode $power tr [envd T65_TR 0.1] sp [envd T65_SP 0.5] saif {[envd T65_SAIF {}]}"
+    set r [open $out/rpt_power_$corner.rpt]
+    foreach line [split [read $r] "\n"] {
+        if {[regexp {^\s*(Net Switching Power|Cell Internal Power|Cell Leakage Power|Total Power|clock_network|register|combinational|sequential|memory|black_box|io_pad|Total)\s} $line]} { puts $fh "power [string trim $line]" }
+    }
+    close $r
+    set r [open $out/rpt_power_hier_$corner.rpt]
+    foreach line [split [read $r] "\n"] { if {[regexp {^\s*(u_\S+|top_chip\S*)\s+\(} $line]} { puts $fh "power_hier [regsub -all {\s+} [string trim $line] { }]" } }
+    close $r
+    set r [open $out/rpt_switching.rpt]
+    foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Nets|Pins|Registers|Combinational|Sequential|Clock|Primary|Black|Total|Memory)} $line]} { puts $fh "switching [regsub -all {\s+} [string trim $line] { }]" } }
+    close $r
+}
+puts $fh [format "pt_wall_s %d pt_mem_mb %s" [expr {[clock seconds] - $t0}] [mem]]
+close $fh
+exit
