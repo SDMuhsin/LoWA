@@ -130,3 +130,11 @@ src/rtl/
       never issues an overlapping RD/WR pair in one cycle, or restore read-first.
   Exit rule: if gm16/vu16 do not meet 4.0 ns after (a)+(b), the chip clock is set to the slowest unit's
   closed period, rounded up to 0.25 ns, and P8d proceeds at that clock; no further RTL rounds.
+- R15 (2026-10-18) P8c2 gate (docs/p8c2_report.md): round-2 repairs bit-exact (full-step estimate +0.24 %
+  cycles); gm16 -0.0095 ns at 4.0 (closes by ~4.1), vu16 -0.70 at 4.0 and -0.27 at 4.75; floorplan-aware DC
+  is not usable on these blocks (placer crash with block abstractions; full linking spreads lanes) and is
+  dropped for P8. mm read/write overlap: write-first kept, guarded by tb/mem/mm_ovl_chk.svh (0 overlaps).
+  Exit rule applies: P8d first re-runs vu16 at 5.0 ns (5.25 if it misses) on a clean server quota; the chip
+  clock is that closed period. No further RTL timing rounds in P8. P8d then runs at that clock: top-level
+  full16 synthesis, Formality, pre-layout PT (ss/tt/ff) and PP, and the final report with the full-size step
+  time recomputed at the new clock.
