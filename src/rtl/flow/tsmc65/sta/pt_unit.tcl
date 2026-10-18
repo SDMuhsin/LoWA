@@ -1,11 +1,16 @@
-# PrimeTime of the full chip netlist (pre-layout, ideal clocks), optionally with PrimePower average power.
-# The chip run (syn/dc_unit.tcl, block `chip`) links its units as block abstractions, so its netlist does not
-# define them: this script reads the chip netlist plus every block netlist below it (a child linked as `abs` is
-# a separate netlist; a child linked as a full netlist is already inside its parent's), links the flat design
-# and annotates each block's DC topographical parasitics (ss RC estimate) on every instance of that block.
-# Environment (sta/run_pt_chip.sh):
+# PrimeTime of one unit's complete netlist (pre-layout, ideal clocks), optionally with PrimePower average power,
+# and the chip level on extracted timing models of its units.
+# Unit mode: a parent run (syn/dc_unit.tcl) links its children as block abstractions, so its netlist does not
+# define them: this script reads the unit netlist plus every block netlist below it (a child linked as `abs` is
+# a separate netlist; a child linked as a full netlist is already inside its parent's), links the flat unit,
+# annotates each block's DC topographical parasitics (ss RC estimate) on every instance of that block, and with
+# T65_ETM=1 writes the unit's extracted timing model (extract_model) for the chip level.
+# Chip mode (T65_USE_ETM=1): only the top netlist and its own parasitics; each child unit is its extracted model
+# from the unit run at the same corner (a flat chip netlist, ~5 M cells, does not fit the 30 GB server in PT).
+# Environment (sta/run_pt_unit.sh):
 #   T65_ROOT, T65_PERIOD, T65_CORNER (ss | tt | ff), T65_PT_OUT (output dir), T65_KID_TAG (as for DC)
-#   T65_BLOCK top block (chip)    T65_PT_AREA 1: per-unit cell / area / register counts
+#   T65_BLOCK block (common/hier.txt)   T65_PT_AREA 1: per-instance cell / area / register counts
+#   T65_ETM 1: write the extracted model   T65_USE_ETM 1: chip mode   T65_ETM_DIR dir of the unit runs (build/tsmc65/pt)
 #   T65_POWER  none | vectorless | saif     T65_SAIF  "file strip_path instance_path ..." (saif mode)
 #   T65_TR / T65_SP  vectorless default toggle rate (per clock cycle) / static probability (0.1 / 0.5)
 set t0 [clock seconds]
@@ -33,7 +38,16 @@ proc t65_tree {b} {
     if {[t65_hier $b link] eq "abs"} { foreach k [t65_hier $b children] { set l [concat $l [t65_tree $k]] } }
     return $l
 }
-set blocks [lsort -unique [t65_tree $top]]
+set useetm [envd T65_USE_ETM 0]
+set blocks [expr {$useetm ? [list $top] : [lsort -unique [t65_tree $top]]}]
+set etms {}
+if {$useetm} {
+    foreach k [t65_hier $top children] {
+        set g [glob -nocomplain [envd T65_ETM_DIR $::env(T65_ROOT)/build/tsmc65/pt]/$k/etm_${corner}*.db]
+        if {[llength $g] != 1} { puts "T65_ERROR no extracted model of $k at $corner"; exit 1 }
+        lappend etms [lindex $g 0]
+    }
+}
 set files {}; set bdesign [dict create]; set bdir [dict create]
 foreach b $blocks {
     set d [expr {$b eq $top ? "$hroot/$top" : [t65_kid_dir $hroot $b]}]
@@ -42,13 +56,13 @@ foreach b $blocks {
     lappend files $d/$b.v
 }
 set_app_var search_path [concat . $::T65_LIBDIR]
-set_app_var link_path [list * [t65_db $corner]]
+set_app_var link_path [concat * [t65_db $corner] $etms]
 read_verilog $files
 current_design [dict get $bdesign $top]
 link_design
-set ::argv [list $period $corner $out/chip_$corner.sdc [t65_hier $top io]]
+set ::argv [list $period $corner $out/pt_$corner.sdc [t65_hier $top io]]
 source $flow/sdc/gen_sdc.tcl
-source $out/chip_$corner.sdc
+source $out/pt_$corner.sdc
 
 # parasitics: each block's own SPEF on each of its instances
 set npar 0; set nparf 0
@@ -67,7 +81,7 @@ update_timing
 redirect $out/rpt_annot_$corner.rpt { report_annotated_parasitics -list_not_annotated -max_nets 20 }
 
 set fh [open $out/summary_$corner.txt w]
-puts $fh "block $top corner $corner period_ns $period netlists [llength $files] ([join $blocks ,]) clocks ideal (pre-CTS)"
+puts $fh "block $top corner $corner period_ns $period netlists [llength $files] ([join $blocks ,]) etm_children [llength $etms] clocks ideal (pre-CTS)"
 puts $fh "parasitics dc_topo_ss_estimate spef_reads $npar failed $nparf"
 set r [open $out/rpt_annot_$corner.rpt]
 foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Total|.*\|\s*[0-9]+\s*\|)} $line]} { puts $fh "annot [string trim $line]" } }
@@ -140,6 +154,11 @@ if {$power ne "none"} {
     set r [open $out/rpt_switching.rpt]
     foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Nets|Pins|Registers|Combinational|Sequential|Clock|Primary|Black|Total|Memory)} $line]} { puts $fh "switching [regsub -all {\s+} [string trim $line] { }]" } }
     close $r
+}
+if {[envd T65_ETM 0]} {
+    if {[catch {extract_model -output $out/etm_$corner -format {db}} e]} { puts $fh "etm failed: [string range $e 0 200]" } else {
+        puts $fh "etm [file tail [lindex [glob -nocomplain $out/etm_${corner}*.db] 0]]"
+    }
 }
 puts $fh [format "pt_wall_s %d pt_mem_mb %s" [expr {[clock seconds] - $t0}] [mem]]
 close $fh
