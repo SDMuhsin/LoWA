@@ -353,7 +353,7 @@ def main():
               f" x dbuf={c['dbuf']} | DRAM bytes/MAC={g['bpm']:.4f}")
         print(f"  MACs/step (CLS-pruned) {s['macs']/1e9:.1f} G  (unpruned {s0['macs']/1e9:.1f} G); array util {s['util']:.3f}")
         print(f"  cycles: gemm {s['cyc_gemm']/1e6:.1f} M, vector {s['cyc_vec']/1e6:.1f} M, lowa {s['cyc_lowa']/1e6:.1f} M, opt+misc {s['cyc_opt']/1e6:.2f} M")
-        print(f"  DRAM charge (P6a, 800 MB/s, eff GEMM {EFF_GEMM:.3f} / vector {EFF_VEC:.3f}): gemm {s['cyc_gemm_c']/1e6:.1f} -> "
+        print(f"  DRAM charge (P6a, {DRAM_BPC:.0f} B/cycle = {DRAM_BPC*f/1e6:,.0f} MB/s at {a.fmhz} MHz, eff GEMM {EFF_GEMM:.3f} / vector {EFF_VEC:.3f}): gemm {s['cyc_gemm_c']/1e6:.1f} -> "
               f"{s['cyc_gemm_m']/1e6:.1f} M, vector {s['cyc_vec_c']/1e6:.1f} -> {s['cyc_vec_m']/1e6:.1f} M"
               + ("" if DRAM_CHARGE else "  (not charged: --no-dram)"))
         print(f"  step cycles: overlapped {s['cyc_overlap']/1e6:.1f} M  serial {s['cyc_serial']/1e6:.1f} M"
