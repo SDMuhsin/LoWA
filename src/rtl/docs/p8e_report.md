@@ -24,8 +24,10 @@ site files.  This report names the compilers generically: **RF** is the single-p
 | macro power | leakage and per-access energy from the liberty, and from the compiler datatable | `sram/mc_power.py` |
 
 No P8d file was edited.  The DC and PT wrappers check that the scripts they evaluate still have the expected shape
-(five / three `source` lines, one final `exit`) and stop otherwise.  Clock: **5.0 ns at ss 0.9 V 125 C**, the
-provisional chip clock of R15 (P8d had not reported `docs/p8_report.md` when these runs were made).
+(five / three `source` lines, one final `exit`) and stop otherwise.  Clock: **5.25 ns at ss 0.9 V 125 C**, the
+chip clock P8d settled under the R15 exit rule (its batch runs `run_p8d.sh 5.25`; `docs/p8_report.md` was not yet on
+main).  The banks were first run at the provisional 5.0 ns and then rerun at 5.25 ns.  The 5.0 ns numbers are in
+section 5.1.
 
 ### 1.1 Port contract and adapter
 
@@ -98,25 +100,45 @@ macros the datatable value is 1.2x the liberty value, which validates the unit r
 | `make test-mem-banks` | local, 4 backends x 3 shapes x Icarus / Verilator | PASS 24 / 24 |
 | `tb/mem/run_tests.py --quick --tech tsmc65_sram` | local, stand-in macro | PASS (TEST-MEM [tsmc65_sram]) |
 
-## 5. DC results at 5.0 ns, ss (banks)
+## 5. DC results at 5.25 ns, ss (banks)
 
 Both variants come from the same wrapper at the same clock and corner (DC topographical, io 40 %).  DC builds the
 macros' physical cells from the logical library (OPT-1413: no physical library cell for the macro; size from the
-.db area).  Power: PrimePower vectorless at tt, on the DC netlists.
+.db area).  Power: PrimePower vectorless at tt on the DC netlists (sram/run_pt_sram.sh), the P8d method.
 
-| bank | variant | area um2 (macro + logic) | WNS ns | hold WNS ns | PP tt total mW | of which leakage mW |
+| bank | variant | area um2 (macro + logic) | setup WNS ns | hold WNS ns | PP tt total mW | of which leakage mW |
 |---|---|---|---|---|---|---|
-| 256 x 32 | latch RF | 60,740 | 0.000 (met) | 0.113 | 0.877 | 0.242 |
-| 256 x 32 | macro | 20,858 (20,508 + 350) | +1.526 | 0.138 | 0.853 | 0.052 |
-| 512 x 32 | latch RF | 121,081 | 0.000 (met) | 0.115 | 1.630 | 0.483 |
-| 512 x 32 | macro | 31,093 (30,743 + 350) | +1.453 | 0.142 | 1.116 | 0.076 |
-| 768 x 32 | latch RF | 181,593 | 0.000 (met) | 0.125 | 2.410 | 0.728 |
-| 768 x 32 | macro | 60,788 (60,438 + 350) | +1.485 | 0.142 | 0.467 (1.24 with the datatable correction) | 0.183 |
+| 256 x 32 | latch RF | 60,758 | 0.000 (met) | 0.113 | 0.851 | 0.243 |
+| 256 x 32 | macro | **20,858** (20,508 + 350) | +1.677 | 0.138 | 0.815 | 0.052 |
+| 512 x 32 | latch RF | 121,159 | 0.000 (met) | 0.137 | 1.581 | 0.484 |
+| 512 x 32 | macro | **31,093** (30,743 + 350) | +1.603 | 0.142 | 1.067 | 0.076 |
+| 768 x 32 | latch RF | 181,670 | 0.000 (met) | 0.129 | 2.336 | 0.729 |
+| 768 x 32 | macro | **60,788** (60,438 + 350) | +1.636 | 0.141 | 0.454 (about 1.19 with the datatable correction) | 0.183 |
 
 A latch-RF slack of 0.000 means "met": DC stops optimising at zero.  Macro banks: the worst path is
-macro clock -> q output (1.22 ns arrival at ss, of which ~1.0 ns is the macro access time), and the worst input path
-(address / data / enables into the macro) has +2.4 ns.  The macros' own minimum cycle (0.93-1.46 ns at ss) is far
-below both 4.0 and 5.0 ns, so the macro variant meets 4.0 ns as well at bank level.
+macro clock -> q output (1.22 ns arrival at ss, of which ~1.0 ns is the macro access time, the rest the adapter mux
+and output buffering), and the worst input path (address / data / enables into the macro) has +2.4 ns.  The
+macros' own minimum cycle (0.93-1.46 ns at ss) is far below 4.0 ns, so at bank level the macro variant also meets
+the original 4.0 ns target.  The per-parent copies (`bank*_gm`, `_vu`, `_lw`) give identical numbers.
+
+### 5.1 At 5.0 ns (first run)
+
+The macro banks had +1.53 / +1.45 / +1.48 ns, with identical areas.  The latch RF had 60,740 / 121,081 / 181,593 um2,
+all met.  PP tt total: macro 0.853 / 1.116 / 0.467 mW, latch 0.877 / 1.630 / 2.410 mW.
+
+## 6. On-chip memory roll-up (108 banks)
+
+The RTL instantiates 108 banks: 72 x 256, 34 x 512 and 2 x 768 words (gm16 64 = 32 WBUF x 256 + 16 XBUF x 512 +
+16 ACC x 512; vu16 38 x 256; lw 2 x 768 + 2 x 256 + 2 x 512), 37,376 words in total.  memory_map.md section 3
+prints "106 banks" in its total row, but its own rows sum to 108.  Bank-level numbers at 5.25 ns (ss area, tt
+vectorless power) times the bank counts:
+
+| | latch RF | SRAM macros | macro / latch |
+|---|---|---|---|
+| memory area mm2 | 8.857 | **2.681** (macros 2.643 + adapters 0.038) | 0.30 |
+| memory power, PP tt vectorless, mW | 119.7 | 95.9 (97.3 with the HD-SRAM correction) | 0.80 |
+| of which leakage, mW | 35.4 | 6.7 | 0.19 |
+| bank setup slack at ss, ns | 0.000 (met) | >= +1.60 | |
 
 UNITS_PLACEHOLDER
 
