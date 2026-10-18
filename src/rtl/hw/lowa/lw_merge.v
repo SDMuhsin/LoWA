@@ -12,7 +12,11 @@
 // Per tile: the hits are fetched into a FIFO (one tile ahead), and from w_tile_done until the last
 // write merge_busy[buf] holds the GEMM controller off the buffer.  Pipeline per hit (issued every
 // other cycle; hits on a cell still in flight wait):
-//   s0 pop, lane/address, coef read | s1 mul(gamma, c) | s3 mul(v, h), mg read | s5 add | s8 mg write
+//   s0 pop, lane/address, coef read | s1 mul(gamma, c) | s3 mul(v, h), mg read | s5 mg data | s6 add | s10 mg write
+// gm_wfeed registers the mg request (P8c2, PLAN R14a): an access reaches the W bank one cycle after it is offered
+// here and read data returns at s5.  The read (s3) and the write (s10) are an odd 7 cycles apart, so with hits
+// issued every other cycle a read and a write never meet on the port; merge_busy is released after the last
+// write has reached the bank (s11).
 // Only COLS = 16, LAMBDA = 4 (64-row W blocks, lane (c + k + 4q) mod 16, address {k, q}).
 module lw_merge (
     input  wire         clk,
@@ -121,9 +125,9 @@ module lw_merge (
                                       .out_valid(ev_out_valid), .out_ready(ev_pop), .out_d(ev_buf), .count(ev_count));
     reg         phase;                                  // hits issue on phase 0 only
     reg         draining;                               // marker seen, waiting for the pipeline
-    reg  [8:0]  pv;                                     // stage valid bits s0..s8
-    reg  [11:0] pc [0:8];                               // {lane, addr} per stage
-    reg         pbuf [0:8];
+    reg  [11:0] pv;                                     // stage valid bits s0..s11
+    reg  [11:0] pc [0:9];                               // {lane, addr} per stage
+    reg         pbuf [0:9];
     reg  [24:0] p_oh_tap_s0, p_oh_tap_s1, p_oh_tap_s2, p_oh_tap_s3;   // one-hot tap (25), s0 .. s3
     wire        head_mark = hf_out_valid & hf_out_d[26];
     wire [5:0]  h_r = hf_out_d[5:0], h_c = hf_out_d[11:6];
@@ -132,42 +136,44 @@ module lw_merge (
     wire [3:0]  h_lane = h_n[5:2] + h_k[3:0] + {h_n[1:0], 2'b00};
     wire [11:0] h_cell = {h_lane, h_k, h_n[1:0]};
     wire        hazard = (pv[0] & (pc[0] == h_cell)) | (pv[1] & (pc[1] == h_cell)) | (pv[2] & (pc[2] == h_cell)) |
-                         (pv[3] & (pc[3] == h_cell)) | (pv[4] & (pc[4] == h_cell)) | (pv[5] & (pc[5] == h_cell));
+                         (pv[3] & (pc[3] == h_cell)) | (pv[4] & (pc[4] == h_cell)) | (pv[5] & (pc[5] == h_cell)) |
+                         (pv[6] & (pc[6] == h_cell)) | (pv[7] & (pc[7] == h_cell));
     assign      p_issue = ev_out_valid & ~draining & hf_out_valid & ~hf_out_d[26] & ~phase & ~hazard;
     wire        take_mark = ev_out_valid & ~draining & head_mark;
     assign hf_out_ready = p_issue | take_mark;
-    assign ev_pop = draining & (pv == 9'd0);
+    assign ev_pop = draining & (pv == 12'd0);
     // fp units
     wire        m1_ov, m2_ov, ad_ov;
     wire [31:0] m1_y, m2_y, ad_y, h_sel;
     fp_mul #(.STAGES(2)) u_m1 (.clk(clk), .rst_n(rst_n), .in_valid(pv[1]), .a(d_gamma), .b(cf_q), .out_valid(m1_ov), .y(m1_y));
     cm_ohmux #(.W(32), .N(25), .REP(1)) u_hsel (.sel(p_oh_tap_s3), .d(hreg), .y(h_sel));
     fp_mul #(.STAGES(2)) u_m2 (.clk(clk), .rst_n(rst_n), .in_valid(pv[3]), .a(m1_y), .b(h_sel), .out_valid(m2_ov), .y(m2_y));
-    reg  [31:0] w_s4;
-    fp_add #(.STAGES(2)) u_ad (.clk(clk), .rst_n(rst_n), .in_valid(pv[5]), .a(w_s4), .b(m2_y), .sub(1'b0), .out_valid(ad_ov), .y(ad_y));
+    reg  [31:0] w_s5, m2_s5, ad_s9;
+    fp_add #(.STAGES(2)) u_ad (.clk(clk), .rst_n(rst_n), .in_valid(pv[6]), .a(w_s5), .b(m2_s5), .sub(1'b0), .out_valid(ad_ov), .y(ad_y));
     wire unused_ov = m1_ov | m2_ov | ad_ov;
     integer i;
     always @(posedge clk) begin
         if (!rst_n) begin
-            pv <= 9'd0; phase <= 1'b0; draining <= 1'b0; merge_busy <= 2'b00; mg_en <= 1'b0; mg_we <= 1'b0;
+            pv <= 12'd0; phase <= 1'b0; draining <= 1'b0; merge_busy <= 2'b00; mg_en <= 1'b0; mg_we <= 1'b0;
         end else begin
-            mg_en <= pv[2] | pv[7];
-            mg_we <= pv[7];
+            mg_en <= pv[2] | pv[9];
+            mg_we <= pv[9];
             phase <= ~phase & busy;
-            pv <= {pv[7:0], p_issue};
+            pv <= {pv[10:0], p_issue};
             if (w_tile_done & busy) merge_busy[w_tile_buf] <= 1'b1;
             if (take_mark) draining <= 1'b1;
             if (ev_pop) begin draining <= 1'b0; merge_busy[ev_buf] <= 1'b0; end
         end
-        for (i = 8; i > 0; i = i - 1) begin pc[i] <= pc[i-1]; pbuf[i] <= pbuf[i-1]; end
+        for (i = 9; i > 0; i = i - 1) begin pc[i] <= pc[i-1]; pbuf[i] <= pbuf[i-1]; end
         if (p_issue) begin pc[0] <= h_cell; pbuf[0] <= ev_buf; end
         p_oh_tap_s0 <= 25'd1 << hf_out_d[16:12];
         p_oh_tap_s1 <= p_oh_tap_s0; p_oh_tap_s2 <= p_oh_tap_s1; p_oh_tap_s3 <= p_oh_tap_s2;
-        if (pv[4]) w_s4 <= mg_rdata;
-        mg_buf <= pv[7] ? pbuf[7] : pbuf[2];
-        mg_lane <= pv[7] ? pc[7][11:8] : pc[2][11:8];
-        mg_addr <= pv[7] ? pc[7][7:0] : pc[2][7:0];
-        mg_wdata <= ad_y;
+        if (pv[5]) begin w_s5 <= mg_rdata; m2_s5 <= m2_y; end
+        ad_s9 <= ad_y;
+        mg_buf <= pv[9] ? pbuf[9] : pbuf[2];
+        mg_lane <= pv[9] ? pc[9][11:8] : pc[2][11:8];
+        mg_addr <= pv[9] ? pc[9][7:0] : pc[2][7:0];
+        mg_wdata <= ad_s9;
     end
     // ------------------------------------------------------------------ FSM
     reg  [15:0] t_cnt_total;

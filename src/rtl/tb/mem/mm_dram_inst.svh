@@ -1,4 +1,5 @@
 // tb_dram instance + image load + statistics, shared by the P6a integration includes.
+    `include "mm_ovl_chk.svh"
     tb_dram #(.AXL(3), .MEMW(`MM_DMEMW)) dram (
         .clk(clk), .rst_n(rst_n),
         .arvalid(m_arvalid), .arready(m_arready), .arid(m_arid), .araddr(m_araddr), .arlen(m_arlen), .arsize(m_arsize), .arburst(m_arburst),
@@ -41,4 +42,7 @@
                  dram.id_beats[8], dram.id_beats[9], dram.id_beats[10], dram.id_beats[11], dram.id_beats[12], dram.id_beats[13],
                  dram.id_beats[14], dram.id_beats[15]);
         if (dram.n_err != 0 || u_mm.err != 0) $display("FAIL mm_dram protocol/response errors");
+        $display("MMOVL_SUMMARY same-cycle rd/wr pairs %0d range-overlapping %0d word-overlapping %0d", mmo_pairs, mmo_rng, mmo_ovl);
+        if (mmo_ovl != 0) $display("FAIL mm_dram same-cycle overlapping read/write");
     end
+

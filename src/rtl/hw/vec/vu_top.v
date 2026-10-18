@@ -124,7 +124,12 @@ module vu_top #(
         for (mi = 0; mi < V; mi = mi + 1) if (l_sfu_cnt[mi*4 +: 4] < sfu_cnt_min) sfu_cnt_min = l_sfu_cnt[mi*4 +: 4];
     end
     wire [2:0]  mk_cnt_min;
-    wire [31:0] xl_lane_val = l_xl[xl_row * 32 +: 32];
+    // cross-lane operand: lane xl_row's xl_val, registered after the 16:1 select (P8c2, PLAN R14a).  Between rows
+    // no latency: vu_seq changes xl_row at least one cycle before it issues the row (X_WROW) and the lanes' xl_val
+    // are constant during a cross-lane op.  At the op start the lanes' last totals settle one cycle later in this
+    // register, so vu_seq's start settle is 3 cycles (was 2): +1 cycle per cross-lane op.
+    reg  [31:0] xl_lane_val;
+    always @(posedge clk) xl_lane_val <= l_xl[xl_row * 32 +: 32];
     vu_seq #(.V(V), .VW(VW), .NS(NS), .SW(SW), .RB(RB), .RBW(RBW)) u_seq (
         .clk(clk), .rst_n(rst_r[0]), .start(start), .busy(busy), .done(done),
         .d_vop(d_vop), .d_rows(d_rows), .d_cols(d_cols), .d_rows_per_b(d_rows_per_b),

@@ -13,6 +13,11 @@
 //   kind 2 W0  : lane 0's s0 -> o2_base;    kind 3 W03 : lane 0's s0 -> o2_base, s3 -> o2_base + 4.
 // Every write is one or two 256-bit beats with a word mask (a group of up to 8 words at any word
 // address is split at the 32-byte boundary), on the same wr channel as the GEMM engine.
+// P8c2 (PLAN R14a): the selected lane's beat (data, word count, ready) is registered after the V:1 lane select
+// (lane_ob / lane_nw), and S_LANE takes a written group from that register.  The register is valid for lane
+// `lane` if it was sampled from that lane in a cycle in which the lane was ready and no pop of it was in flight
+// (a pop changes the lane's read register at the end of the cycle the lane sees it); otherwise S_LANE waits one
+// cycle.  Rows beyond the tile are dropped on the lane's ready bit alone, as before.
 module vu_writer #(
     parameter V    = 16,
     parameter VW   = 4,
@@ -99,9 +104,21 @@ module vu_writer #(
             if (k < {28'd0, rest_n}) m2[k] = 1'b1;
         end
     end
-    wire [255:0] lane_ob = ob_data[lane[VW-1:0] * 256 +: 256];
-    wire [3:0]   lane_nw = ob_nw[lane[VW-1:0] * 4 +: 4];
-    wire         lane_rdy = ob_rdy[lane[VW-1:0]];
+    // registered beat of the selected lane (P8c2)
+    reg  [255:0] lane_ob;
+    reg  [3:0]   lane_nw;
+    reg          beat_ok;
+    reg  [VW-1:0] beat_lane;
+    always @(posedge clk) begin
+        lane_ob <= ob_data[lane[VW-1:0] * 256 +: 256];
+        lane_nw <= ob_nw[lane[VW-1:0] * 4 +: 4];
+        beat_lane <= lane[VW-1:0];
+        if (!rst_n) beat_ok <= 1'b0;
+        else        beat_ok <= ob_rdy[lane[VW-1:0]] & ~ob_pop[lane[VW-1:0]];
+    end
+    // a row beyond the tile (lane >= nrows) is popped and dropped: its data is not used, so it only needs the
+    // lane's ready bit (1 bit, not registered); a written row needs the registered beat
+    wire         lane_rdy = (lane < {1'b0, c_nrows}) ? (beat_ok & (beat_lane == lane[VW-1:0])) : ob_rdy[lane[VW-1:0]];
     // vector group data: 8 lane scalars from group lane[VW:3] (lanes 8 g .. 8 g + 7), masked by nrows
     reg  [255:0] vdat;
     reg  [3:0]   vn;

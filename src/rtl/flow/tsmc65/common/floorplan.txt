@@ -1,0 +1,9 @@
+# DC topographical floorplans (P8c2, PLAN R14b), read by syn/floorplan.tcl when a block is compiled with T65_FP=1.
+# The die is derived, never drawn: core area = area_um2 / util, core aspect (height / width) = aspect, a core offset
+# of `offset` um on every side, all signal ports and the clock on the stated side (l r t b), no cell placed by hand.
+# area_um2 is the block's measured area (unit total incl. the abstracted children: their cells are placed in this
+# core); util = the template's placement utilisation (GanAccelAsic src_int8_tsmc65, MQ65_UTIL 0.65), aspect 1 =
+# a square core like the template's (-side_ratio {1 1}), offset 12 um = the template's core offset.
+# block  area_um2    util  aspect  side  offset  source of area_um2
+gm16     11170038    0.65  1.0     b     12      docs/p8c_report.md section 3 (gm16 at 4.0 ns after the P8c repairs)
+vu16     4364134     0.65  1.0     b     12      docs/p8c_report.md section 3 (vu16 at 4.0 ns after the P8c repairs)

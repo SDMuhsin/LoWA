@@ -203,6 +203,7 @@ syn65-%:
 
 ## P8b: hierarchical DC of the full16 units at 4.0 ns (flow/tsmc65/common/hier.txt; children first, finished blocks reused):
 ##   make syn65u-<unit|block> [T65_PERIOD=4.0] [FORCE=1|all]   unit = fp gemm vec lowa mem rng ctrl, or any block of hier.txt
+##        [T65_FP=1 T65_TAG=_fp]                  P8c2: floorplanned run of the named block (common/floorplan.txt), own output dir
 ##   make syn65u-all [UNITS=...]                   every unit in one sequential batch (log build/tsmc65/hier_all.log)
 ##   make syn65u-status / syn65u-results         progress markers / one summary line per block (numbers only)
 ##   make sync65-results                         fetch the summary text files to flow/tsmc65/results/
@@ -220,7 +221,7 @@ syn65u-all:
 	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) nohup flow/tsmc65/syn/run_hier.sh $(UNITS) > build/tsmc65/hier_all.log 2>&1 < /dev/null & echo launched all'
 
 syn65u-%:
-	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) nohup flow/tsmc65/syn/run_hier.sh $* > build/tsmc65/hier_$*.log 2>&1 < /dev/null & echo launched $*'
+	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) T65_FP=$(or $(T65_FP),0) T65_TAG=$(T65_TAG) nohup flow/tsmc65/syn/run_hier.sh $* > build/tsmc65/hier_$*$(T65_TAG).log 2>&1 < /dev/null & echo launched $*$(T65_TAG)'
 
 synth pnr:
 	@echo "make $@: not implemented yet (see PLAN.md phases P2-P8)"; false

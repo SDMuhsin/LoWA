@@ -15,6 +15,13 @@
 // travels R-1-r hops down the chain, no two words collide), the word is at the chain bottom at
 // e + 2, the adder takes it with the registered ACC word, y at e + 4, written back at e + 5.
 // (e = 0 is the cycle after `start` is accepted; the injection origin is start + 2.)
+// P8c2 (PLAN R14a): with DRS > 0 the chain has XR(r) = floor((R-1)/DRS) - floor(r/DRS) extra registers below row r
+// (gm_array); row r then injects XR(r) cycles earlier (offset (LAMBDA-1)*(R-1-r) - XR(r) >= 0), so every word
+// still reaches the chain bottom at e + 2 and nothing else in the schedule moves.  Rows above the last inject
+// earlier than before, but their captures precede the last row's by one cycle per row while their injections
+// follow it by >= LAMBDA-2 cycles per row, so the last row (XR = 0, unchanged) stays the binding case of the
+// controller's capture-before-injection rule (gm_ctrl DOFF), and the controller's last-injection bound only gets
+// more conservative.
 // The controller schedules `start` so that the array's captures precede the injections and
 // the engine is free (docs/p3_report.md section 3); err flags a start while busy.
 // The epilogue reads the other half through ep_* (DW words per access, data the next cycle).
@@ -29,7 +36,8 @@ module gm_drain #(
     parameter RW     = 4,                   // log2 ROWS
     parameter MTW    = 2,                   // log2 micro-tiles per block
     parameter AW     = 9,                   // MTW + RW + GW + QW - 1
-    parameter EW     = 9                    // log2(NG*RL) + 1 (engine counter width)
+    parameter EW     = 9,                   // log2(NG*RL) + 1 (engine counter width)
+    parameter DRS    = 1                    // drain chain register spacing of gm_array (0 = none)
 ) (
     input  wire                 clk,
     input  wire                 rst_n,
@@ -142,7 +150,8 @@ module gm_drain #(
     genvar r, c, j;
     generate
         for (r = 0; r < ROWS; r = r + 1) begin : g_inj
-            localparam OFF = (LAMBDA - 1) * (ROWS - 1 - r);
+            localparam XR  = (DRS > 0) ? ((ROWS - 1) / (DRS > 0 ? DRS : 1) - r / (DRS > 0 ? DRS : 1)) : 0;
+            localparam OFF = (LAMBDA - 1) * (ROWS - 1 - r) - XR;
             /* verilator lint_off WIDTHEXPAND */
             /* verilator lint_off UNSIGNED */    // OFF = 0 for the last row
             wire hit = run1 && (d1 >= OFF) && (d1 < OFF + LAMBDA);

@@ -3,6 +3,7 @@
 # Units and blocks come from common/hier.txt; every child is built before its parent, and a block that already
 # has a design.txt (a finished run) is reused, not recompiled (FORCE=1 rebuilds the named blocks themselves, FORCE=all every block in the order).
 # Prints START / DC_DONE per run and HIER_DONE at the end; stops at the first failed block.
+# T65_FP / T65_TAG (floorplan, output suffix; syn/run_unit.sh) apply to the named blocks only, never to their children.
 #   cd <tree>/src/rtl || exit 1; nohup flow/tsmc65/syn/run_hier.sh vec > build/tsmc65/hier_vec.log 2>&1 < /dev/null &
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
@@ -22,11 +23,12 @@ for a in "$@"; do
 done
 echo "ORDER$ORDER"
 for b in $ORDER; do
-    if [ -f "$ROOT/build/tsmc65/hier/$b/design.txt" ] && [ "${FORCE:-0}" != all ]; then
+    case " $NAMED " in *" $b "*) tag=${T65_TAG:-}; fp=${T65_FP:-0} ;; *) tag=""; fp=0 ;; esac
+    if [ -f "$ROOT/build/tsmc65/hier/$b$tag/design.txt" ] && [ "${FORCE:-0}" != all ]; then
         case " $NAMED " in *" $b "*) [ "${FORCE:-0}" = 1 ] || { echo "REUSE $b"; continue; } ;; *) echo "REUSE $b"; continue ;; esac
     fi
-    echo "START $b $(date +%H:%M:%S)"
-    r=$("$HERE/run_unit.sh" "$b" "$P" "${T65_CORNER:-ss}")
+    echo "START $b$tag $(date +%H:%M:%S)"
+    r=$(T65_FP=$fp T65_TAG=$tag "$HERE/run_unit.sh" "$b" "$P" "${T65_CORNER:-ss}")
     echo "$r"
     case "$r" in *"summary yes"*) ;; *) echo "HIER_FAILED $b"; echo "HIER_DONE $(date +%H:%M:%S)"; exit 1 ;; esac
 done

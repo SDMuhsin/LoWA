@@ -374,6 +374,7 @@ module vu_seq #(
     reg  [VW:0] x_r;
     reg  [2:0]  x_st;
     reg  [1:0]  x_wt;                     // settle: xl_sel -> broadcast register -> lane xl_val register (P8c)
+                                          // -> vu_top operand register (P8c2: one more cycle at the op start)
     wire        x_ov;
     wire [31:0] x_y;
     localparam [2:0] X_IDLE = 3'd0, X_ROW = 3'd1, X_WROW = 3'd2, X_ICH = 3'd3, X_WCH = 3'd4, X_FL = 3'd5, X_WFL = 3'd6,
@@ -391,7 +392,7 @@ module vu_seq #(
             case (x_st)
                 X_IDLE: begin
                     if (cs == C_XL & ~xl_done) begin
-                        x_r <= {(VW+1){1'b0}}; xl_sel <= c_xls2; xl_row <= {VW{1'b0}}; x_wt <= 2'd2;
+                        x_r <= {(VW+1){1'b0}}; xl_sel <= c_xls2; xl_row <= {VW{1'b0}}; x_wt <= 2'd3;
                         x_st <= X_WROW;                           // settle the lane mux, then issue
                     end else if (cs == C_XLFL & ~xlf_done) begin
                         if (c_xlchunk & (xcnt != 7'd0)) x_st <= X_FL;

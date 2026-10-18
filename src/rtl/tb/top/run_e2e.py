@@ -50,11 +50,14 @@ def build(memw, bdir, threads=1):
     exe = os.path.join(obj, "Vtb_top")
     hw = sorted(os.path.join(dp, f) for dp, _, fs in os.walk(os.path.join(ROOT, "hw")) for f in fs if f.endswith(".v"))
     srcs = [os.path.join(ROOT, "tb/top/tb_top.sv"), os.path.join(ROOT, "tb/mem/tb_dram.sv")] + hw
-    if os.path.exists(exe) and os.path.getmtime(exe) > max(os.path.getmtime(s) for s in srcs):
+    deps = srcs + [os.path.join(ROOT, "tb/mem/mm_ovl_chk.svh")]
+    if os.path.exists(exe) and os.path.getmtime(exe) > max(os.path.getmtime(s) for s in deps):
         return exe
     t0 = time.time()
+    if os.path.exists(exe):
+        os.remove(exe)                      # a failed build must not leave the previous binary in place
     r = sh(f"verilator --binary --timing -O3 -j 16 --x-assign fast --x-initial fast -Wno-fatal -Wno-lint -Wno-style "
-           f"-CFLAGS -O2 {f'--threads {threads}' if threads > 1 else ''} --top-module tb_top +define+MM_DMEMW={memw} -Mdir {obj} {' '.join(srcs)} > {obj}.build.log 2>&1")
+           f"-CFLAGS -O2 {f'--threads {threads}' if threads > 1 else ''} --top-module tb_top +define+MM_DMEMW={memw} -I{os.path.join(ROOT, 'tb/mem')} -Mdir {obj} {' '.join(srcs)} > {obj}.build.log 2>&1")
     if not os.path.exists(exe):
         raise RuntimeError(f"verilator build failed: {obj}.build.log")
     print(f"built {exe} ({time.time() - t0:.0f} s)", flush=True)
@@ -310,7 +313,7 @@ def run_sim(exe, freg, fimg, fhost, fdump, bdir, maxcyc):
     simt = time.time() - t1
     log = open(f"{bdir}/sim.log").read().splitlines()
     for ln in log:
-        if ln.startswith(("STEP", "ACCT", "HOSTBYTES", "PASS", "FAIL", "CSR", "DRAMSTATS")):
+        if ln.startswith(("STEP", "ACCT", "HOSTBYTES", "PASS", "FAIL", "CSR", "DRAMSTATS", "MMOVL")):
             print(ln)
     print(f"simulation: {simt:.0f} s wall", flush=True)
     return log, simt

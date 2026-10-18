@@ -17,6 +17,7 @@ module gm_top #(
     parameter COLS       = 16,              // 4, 8 or 16
     parameter LAMBDA     = 4,               // accumulators per PE = W rows per column (fixed: 4)
     parameter FMA_STAGES = 2,
+    parameter DRS        = 1,               // drain chain register spacing (gm_array / gm_drain; P8c2)
     parameter NSFU       = 16,
     parameter NROB       = 64,
     parameter ROBW       = 6
@@ -125,7 +126,7 @@ module gm_top #(
         end
     endgenerate
 
-    gm_array #(.ROWS(ROWS), .COLS(COLS), .LAMBDA(LAMBDA), .QW(QW), .FMA_STAGES(FMA_STAGES)) u_array (
+    gm_array #(.ROWS(ROWS), .COLS(COLS), .LAMBDA(LAMBDA), .QW(QW), .FMA_STAGES(FMA_STAGES), .DRS(DRS)) u_array (
         .clk(clk), .rst_n(rst_r[0]), .a_row(a_row), .b_col(b_col), .ctl_col(ctl_col),
         .inj_row(inj_row), .inj_q(inj_q), .col_en(col_en), .dr_out(dr_out), .err_overrun(err_pe));
 
@@ -193,7 +194,7 @@ module gm_top #(
     wire [AW-1:0]        acc_addr;
     wire [DW*32-1:0]     acc_q;
     gm_drain #(.ROWS(ROWS), .COLS(COLS), .LAMBDA(LAMBDA), .QW(QW), .DW(DW), .NG(NG), .GW(GW), .RW(RW),
-               .MTW(MTW), .AW(AW), .EW(EW)) u_drain (
+               .MTW(MTW), .AW(AW), .EW(EW), .DRS(DRS)) u_drain (
         .clk(clk), .rst_n(rst_r[4]),
         .start(dr_start), .s_half(dr_half), .s_mt(dr_mt), .s_first(dr_first), .s_last(dr_last),
         .free(dr_free), .ep_block(acc_block),

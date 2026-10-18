@@ -11,6 +11,7 @@
 #   T65_OUT   output dir (build/tsmc65/hier/<block>, stays on the server)
 #   T65_INCR  1: compile_ultra -incremental after the first pass (1)
 #   T65_SPEF  1: write the topographical parasitics for the PT corner runs (1)
+#   T65_FP    1: floorplan the block before compile (syn/floorplan.tcl, common/floorplan.txt; topographical only) (0)
 set t0 [clock seconds]
 set flow $::env(T65_ROOT)/flow/tsmc65
 source $flow/common/site.tcl
@@ -124,6 +125,13 @@ check_design -nosplit > $out/rpt/check_design.rpt
 check_timing          > $out/rpt/check_timing_pre.rpt
 set_clock_gating_style -sequential_cell latch -positive_edge_logic integrated \
     -control_point before -minimum_bitwidth 4 -max_fanout 32
+
+# ---------------------------------------------------------------- floorplan (P8c2): T65_FP=1, topographical only
+set fp_line ""
+if {[envd T65_FP 0] && $topo} {
+    source $flow/syn/floorplan.tcl
+    if {[catch {set fp_line [t65_floorplan $block $out]} e]} { puts "T65_ERROR floorplan: $e"; exit 1 }
+}
 
 # ---------------------------------------------------------------- compile (no retiming: RTL register boundaries kept)
 compile_ultra -no_autoungroup -gate_clock

@@ -15,7 +15,8 @@
 // The next pass may start in the cycle of the current pass's last read (ps_ready), so full chunks
 // stream back to back with no bubble.  busy[b] = buffer b is being read.
 // Merge-engine port (P5, LoWA merge-on-load): single-word read-modify-write access to one lane of
-// a buffer, read data valid the next cycle; it has priority over a DMA beat on the same lane
+// a buffer; the request is registered at this port (P8c2, PLAN R14a), so an access reaches the bank one cycle
+// after it is offered and read data is valid two cycles after the request; it has priority over a DMA beat on the same lane
 // (err_conflict flags the dropped beat word; by protocol the merge only runs after the W tile has
 // been written and before the buffer is read).
 // P8c timing (PLAN R13): the DMA write request is registered per lane after the lane decode (wen_s / waddr_s /
@@ -130,6 +131,12 @@ module gm_wfeed #(
         end
     endgenerate
 
+    // ------------------------------------------------------------------ merge request register (P8c2)
+    reg           mg_we_s;
+    reg [AW-1:0]  mg_addr_s;
+    reg [31:0]    mg_wdata_s;
+    always @(posedge clk) begin mg_we_s <= mg_we; mg_addr_s <= mg_addr; mg_wdata_s <= mg_wdata; end
+
     // ------------------------------------------------------------------ lanes
     wire [31:0] q0 [0:WL-1];
     wire [31:0] q1 [0:WL-1];
@@ -161,14 +168,18 @@ module gm_wfeed #(
                     else        wen_s <= wen;
                     waddr_s <= waddr; wdata_s <= wdata;
                 end
+                // merge request: lane hit decoded from the port, then registered (P8c2), so the bank sees registers
+                reg  mg_hit;
                 /* verilator lint_off WIDTHEXPAND */
-                wire mg_hit = mg_en && mg_buf == b && mg_lane == l;
+                always @(posedge clk)
+                    if (!rst_n) mg_hit <= 1'b0;
+                    else        mg_hit <= mg_en && mg_buf == b && mg_lane == l;
                 wire rd_hit = rd_en && rd_buf == b;
                 /* verilator lint_on WIDTHEXPAND */
                 wire          en   = mg_hit | wen_s | rd_hit;
-                wire          we   = mg_hit ? mg_we : wen_s;
-                wire [AW-1:0] addr = mg_hit ? mg_addr : wen_s ? waddr_s : rd_addr;
-                wire [31:0]   d    = mg_hit ? mg_wdata : wdata_s;
+                wire          we   = mg_hit ? mg_we_s : wen_s;
+                wire [AW-1:0] addr = mg_hit ? mg_addr_s : wen_s ? waddr_s : rd_addr;
+                wire [31:0]   d    = mg_hit ? mg_wdata_s : wdata_s;
                 wire [31:0]   qq;
                 mm_sram_bank #(.WORDS(WORDS), .WIDTH(32), .AW(AW)) u_bank (
                     .clk(clk), .en(en), .we(we), .addr(addr), .d(d), .q(qq));
@@ -184,11 +195,13 @@ module gm_wfeed #(
     always @(posedge clk)
         if (!rst_n) err_conflict <= 1'b0;
         else if (|conf) err_conflict <= 1'b1;
-    // merge read data: the lane accessed last cycle
-    reg            mg_buf_s1;
-    reg [WLW-1:0]  mg_lane_s1;
-    always @(posedge clk) begin mg_buf_s1 <= mg_buf; mg_lane_s1 <= mg_lane; end
-    assign mg_rdata = mg_buf_s1 ? q1[mg_lane_s1] : q0[mg_lane_s1];
+    // merge read data: the lane requested two cycles ago (request register, then the bank access)
+    reg            mg_buf_s1, mg_buf_s2;
+    reg [WLW-1:0]  mg_lane_s1, mg_lane_s2;
+    always @(posedge clk) begin
+        mg_buf_s1 <= mg_buf; mg_lane_s1 <= mg_lane; mg_buf_s2 <= mg_buf_s1; mg_lane_s2 <= mg_lane_s1;
+    end
+    assign mg_rdata = mg_buf_s2 ? q1[mg_lane_s2] : q0[mg_lane_s2];
 
     // ------------------------------------------------------------------ rotator + skew chains
     wire [2*WL*32-1:0] qall;                // entry l = buffer 0 lane l, entry WL + l = buffer 1 lane l

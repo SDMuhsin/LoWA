@@ -60,4 +60,5 @@
         .m_wvalid(m_wvalid), .m_wready(m_wready), .m_wdata(m_wdata), .m_wstrb(m_wstrb), .m_wlast(m_wlast),
         .m_bvalid(m_bvalid), .m_bready(m_bready), .m_bid(m_bid), .m_bresp(m_bresp));
     assign mk_rsp_keep = mm_keep[$bits(mk_rsp_keep)-1:0];
+    localparam MMO_NR = 2, MMO_NW = 1;
     `include "mm_dram_inst.svh"

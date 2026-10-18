@@ -149,6 +149,10 @@ module tb_top;
         end
     endtask
 
+    // same-cycle overlapping read / write pairs on the memory system's engine ports (P8c2, R14c)
+    localparam MMO_NR = 8, MMO_NW = 4;
+`define MMO_INST u_chip.u_mm
+    `include "mm_ovl_chk.svh"
     // first cycle of every sticky engine / memory error (debug aid)
     reg [7:0] gm_err_q = 0;
     reg [1:0] mm_err_q = 0;
@@ -219,8 +223,10 @@ module tb_top;
         $fclose(fh);
         if (fop != 0) $fclose(fop);
         repeat (8) @(negedge clk);
-        if (dram.n_err != 0 || u_chip.u_mm.err != 0 || u_chip.u_seq.err != 0 || u_chip.gm_err != 0)
-            $display("FAIL tb_top errors: dram %0d axi %b seq %b gemm %b", dram.n_err, u_chip.u_mm.err, u_chip.u_seq.err, u_chip.gm_err);
+        $display("MMOVL_SUMMARY same-cycle rd/wr pairs %0d range-overlapping %0d word-overlapping %0d", mmo_pairs, mmo_rng, mmo_ovl);
+        if (dram.n_err != 0 || u_chip.u_mm.err != 0 || u_chip.u_seq.err != 0 || u_chip.gm_err != 0 || mmo_ovl != 0)
+            $display("FAIL tb_top errors: dram %0d axi %b seq %b gemm %b rd/wr overlap %0d", dram.n_err, u_chip.u_mm.err,
+                     u_chip.u_seq.err, u_chip.gm_err, mmo_ovl);
         else
             $display("PASS tb_top %0d steps (protocol; data checked by run_e2e.py)", nstep);
         $display("DRAMSTATS rd_beats %0d wr_beats %0d ar %0d aw %0d", dram.rd_beats, dram.wr_beats, dram.ar_n, dram.aw_n);

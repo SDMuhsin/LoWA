@@ -13,8 +13,11 @@
 // Same-address ordering (word granular, docs/p6a_report.md section 2): a read request is not accepted
 // while it overlaps a pending write (accepted, not yet B-acknowledged) of any channel, and a write beat
 // is not accepted while it overlaps a pending read (accepted, last beat not yet arrived) or a read
-// request offered in the same cycle.  So every read returns the data of exactly the writes accepted
-// before it; a write beat also waits for overlapping pending writes of the other write channels
+// request held in a port's request register.  A read is ordered when it enters its request register (P8c):
+// a write beat accepted in the cycle an overlapping read is offered goes first (before P8c the beat waited for
+// the offered read).  The compiler / sequencer never issue such a pair (docs/p8c2_report.md section 3; checked
+// in every integration and e2e test by tb/mem/mm_ovl_chk.svh).  So every read returns the data of exactly the
+// writes accepted before it; a write beat also waits for overlapping pending writes of the other write channels
 // (different AWIDs are unordered in AXI); a waiting access makes the write channels close their open
 // bursts (flush).
 module mm_top #(

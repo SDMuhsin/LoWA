@@ -110,12 +110,19 @@ module tb_lw_top;
     `include "mm_attach_lw.svh"
 `endif
     // ------------------------------------------------------------------ W buffer model (merge mode)
+    // models gm_wfeed's merge port: the request is registered at the port (P8c2), then the bank is accessed
+    // (read data two cycles after the request)
     reg [31:0] wbuf [0:2*16*256-1];
     integer mg_cnt = 0;
+    reg        mg_en_s = 1'b0, mg_we_s, mg_buf_s;
+    reg [3:0]  mg_lane_s;
+    reg [7:0]  mg_addr_s;
+    reg [31:0] mg_wdata_s;
     always @(posedge clk) begin
-        if (mg_en) begin
-            if (mg_we) wbuf[{mg_buf, mg_lane, mg_addr}] <= mg_wdata;
-            else mg_rdata <= wbuf[{mg_buf, mg_lane, mg_addr}];
+        mg_en_s <= mg_en; mg_we_s <= mg_we; mg_buf_s <= mg_buf; mg_lane_s <= mg_lane; mg_addr_s <= mg_addr; mg_wdata_s <= mg_wdata;
+        if (mg_en_s) begin
+            if (mg_we_s) wbuf[{mg_buf_s, mg_lane_s, mg_addr_s}] <= mg_wdata_s;
+            else mg_rdata <= wbuf[{mg_buf_s, mg_lane_s, mg_addr_s}];
             mg_cnt <= mg_cnt + 1;
         end
     end
