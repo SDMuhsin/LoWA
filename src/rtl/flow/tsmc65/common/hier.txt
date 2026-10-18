@@ -15,7 +15,7 @@
 #   alone).  With abstractions each child's internal paths are timed in its own run (a compact region, as a
 #   hierarchical layout places it) and the parent times the interface paths; the unit totals add each child's
 #   own summary.  It also keeps gm16 within memory.
-# units (syn/run_hier.sh <unit>): fp gemm vec lowa mem rng ctrl; chip is the P8c top (prepared, not run in P8b).
+# units (syn/run_hier.sh <unit>): fp gemm vec lowa mem rng ctrl; chip is the top (P8d, run_p8d.sh).
 #
 # ---- fp: the arithmetic units, standalone, at the configurations the design instantiates
 fma      fp_fma        STAGES=>2                                 -                       20
@@ -59,7 +59,7 @@ mm       mm_top        NR=>8,NM=>2,NW=>4,AXL=>3,MK_DRAM=>0       rng9,rng3      
 # ---- ctrl: sequencer (with ct_dma) and the host CSR slave
 seq      ct_seq        GP=>36,VP=>25,LP=>10                      -                       20
 axil     top_axil      -                                         -                       20
-# ---- P8c top (prepared only)
+# ---- the chip (P8d: run at the chip clock with T65_KID_TAG="gm16=_p<P>,vu16=_p<P>", run_p8d.sh)
 chip     top_chip      -                                         gm16,vu16,lw,mm,seq,axil 20 abs
 #
 # unit -> blocks (dependencies are added by run_hier.sh)
