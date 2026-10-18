@@ -8,7 +8,7 @@
 # Output build/tsmc65/saif/<unit>_<case>/dut.saif (stays on the server); marker SAIF_DONE.
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
-u=$1; d=$(cd "$2" && pwd); c=$3; n=$4; p=$5
+u=$1; d=$(cd "$2" && pwd) || exit 1; c=$3; n=$4; p=$5
 out=$ROOT/build/tsmc65/saif/${u}_$c
 mkdir -p "$out"; cd "$out" || exit 1
 case $u in
@@ -22,7 +22,7 @@ mask=""; [ -s "$d/$c.mask.hex" ] && mask="+mask=$d/$c.mask.hex"
 tcsh -f -c "source $ROOT/flow/tsmc65/site/site.csh >& /dev/null; source \$T65_VCS_CSH >& /dev/null; \
   vcs -full64 -sverilog -timescale=1ns/1ps +define+MM_TECH=2 $def $pv -o simv -l vcs.log \
   $ROOT/$tb $ROOT/tb/power/saif_ctl.sv -f files.f >& /dev/null; \
-  ./simv +desc=$d/$c.desc +mem=$d/$c.mem.hex +exp=dummy.exp.hex $mask +saifcyc=$n +saif=dut.saif -l sim.log >& /dev/null"
+  ./simv +desc=$d/$c.desc +mem=$d/$c.mem.hex +exp=dummy.exp.hex $mask +saifcyc=$n -l sim.log >& /dev/null"
 if [ -f dut.saif ]; then
     ps=$(awk -v p="$p" 'BEGIN { printf "%d", p * 1000 / 40 }')
     sed -i -E "0,/\(TIMESCALE[^)]*\)/s//(TIMESCALE $ps ps)/" dut.saif
