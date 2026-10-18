@@ -50,6 +50,7 @@ for b in $ORDER; do
         /usr/bin/time -v -o "$out/time.txt" tcsh -f -c \
             "source $ROOT/flow/tsmc65/common/env.csh; dc_shell $mode -f $ROOT/flow/tsmc65/sram/dc_sram.tcl" > dc.log 2>&1
     )
+    rm -rf "$out/work"     # elaboration library: not read again (parents link the .ddc); keeps the quota lean
     s=$SUM/${V}_p${P}_$b.txt
     if [ -f "$out/summary.txt" ]; then
         cp -f "$out/summary.txt" "$s"
