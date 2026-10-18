@@ -3,8 +3,8 @@
 #   T65_ROOT  src/rtl of the tree     T65_BLOCK block (common/hier.txt)   T65_OUT the block's DC output dir
 #   T65_CORNER library corner of the DC run (ss)                          T65_FM_OUT this run's output dir
 # Hierarchical verification: a block whose children are linked as block abstractions (`abs`) is verified with
-# those children as black boxes on both sides (reference: hdlin_interface_only on the child modules;
-# implementation: the netlist does not define them).  Every child is verified in its own run of this script,
+# those children as black boxes on both sides (hdlin_interface_only: the child RTL modules in the reference, the
+# children's netlist designs in the implementation).  Every child is verified in its own run of this script,
 # so each cell of the chip is verified exactly once.  Children linked as full netlists (lane's banks) are
 # verified inside their parent.
 set t0 [clock seconds]
@@ -37,10 +37,21 @@ set defs [join [lmap d [t65_defines] {string cat "+define+" $d}] ""]
 read_verilog -container r -libname WORK -05 -vcs $defs [t65_hw_files]
 if {$params eq ""} { set_top r:/WORK/$mod } else { set_top r:/WORK/$mod -parameter [string map {=> =} $params] }
 set_app_var hdlin_interface_only ""
-# ---- implementation: the DC netlist; abstracted children are not defined in it (black boxes)
-set_app_var hdlin_unresolved_modules [expr {$abs ? "black_box" : "error"}]
-read_verilog -container i -libname WORK -netlist $out/$block.v
+# ---- implementation: the DC netlist; abstracted children are not defined in it: their own netlists are read
+# for the interface only (pin directions), as black boxes
+set ifiles [list $out/$block.v]; set bbi {}
+if {$abs} {
+    set hroot [file dirname $out]
+    foreach k $kids {
+        set kd [t65_kid_dir $hroot $k]
+        set fh [open $kd/design.txt]; lappend bbi [string trim [read $fh]]; close $fh
+        lappend ifiles $kd/$k.v
+    }
+}
+set_app_var hdlin_interface_only [join [lsort -unique $bbi] " "]
+read_verilog -container i -libname WORK -netlist $ifiles
 set_top i:/WORK/$design
+set_app_var hdlin_interface_only ""
 
 match
 report_unmatched_points                  > $fo/rpt/unmatched.rpt
