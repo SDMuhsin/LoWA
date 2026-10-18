@@ -118,3 +118,15 @@ src/rtl/
   constraints. Block abstractions as the parent-link method are accepted. Phases renamed: P8c = timing
   repair + rerun of gm16/vu16/mm (+ reconcile on-chip capacity: RTL 146 KiB vs memory_map.md 89 KiB);
   P8d = top-level full16 synthesis + Formality + pre-layout PT/PP + final report.
+- R14 (2026-10-18) P8c gate (docs/p8c_report.md): repairs bit-exact (e2e +0.03 % cycles); mm meets 4.0 ns,
+  gm16 -1.31 ns, vu16 -1.59 ns. Remaining paths are unit-spanning wires in unfloorplanned 4-11 mm2 blocks plus
+  a few logic stages. PI signs off round 2, the last timing round before P8d:
+  (a) RTL: registered merge request (gm mg_lane), drain-chain pipeline stages, the zero-cost register before
+      the cross-lane FMA, registered writer beat; same conditions as R13 (bit-exact, cycle deltas reported,
+      latencies updated in RTL/compiler, never in testbenches).
+  (b) Physical awareness: gm16 and vu16 get a DC topographical floorplan (die/core area and aspect from the
+      measured area at the same utilisation as the template, ports on a stated edge, no hand placement).
+  (c) Justify the mm read/write overlap change (read-first -> write-first): show the compiler/sequencer
+      never issues an overlapping RD/WR pair in one cycle, or restore read-first.
+  Exit rule: if gm16/vu16 do not meet 4.0 ns after (a)+(b), the chip clock is set to the slowest unit's
+  closed period, rounded up to 0.25 ns, and P8d proceeds at that clock; no further RTL rounds.
