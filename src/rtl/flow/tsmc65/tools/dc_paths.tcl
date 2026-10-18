@@ -29,14 +29,7 @@ foreach pat $::env(T65_PATHS) {
     if {[sizeof_collection $ends] == 0} { puts $fo "group $pat none"; continue }
     set p [get_timing_paths -delay_type max -max_paths 1 -to $ends]
     puts $fo "group $pat [t65_path_line $p]"
-    set d [dict create]; set prev 0.0
-    foreach_in_collection pt [get_attribute $p points] {
-        set a [get_attribute $pt arrival]; set o [get_object_name [get_attribute $pt object]]
-        set k [lindex [split $o /] 0]; if {![string match u_* $k]} { set k top }
-        dict incr d $k 0; dict set d $k [expr {[dict get $d $k] + $a - $prev}]; set prev $a
-    }
-    set s ""; dict for {k v} $d { append s [format " %s %.2f" $k $v] }
-    puts $fo "  split$s"
+    puts $fo "  split[t65_path_split $p]"
 }
 close $fo
 exit

@@ -13,6 +13,9 @@
 //             LDS / WST / W0 / W03 phases load / write per-row scalars through the loader / writer.
 // Reduction orders are the contract's (docs/dataflow.md 5, arith.md 2): every row is one lane,
 // sequential in j; chunks of KC = 64 in the lane accumulator; cross-lane sums sequential in row order.
+// P8c timing (PLAN R13): the lanes receive this module's outputs through vu_top's broadcast register (one cycle
+// later) and register acc_idle / xl_val (one more cycle); the in-flight accounting and the fixed waits below
+// include those cycles (POP window 4, STORE limiter, drain 7, flush wait 4, cross-lane settle 3).
 module vu_seq #(
     parameter V    = 16,
     parameter VW   = 4,
@@ -247,11 +250,14 @@ module vu_seq #(
     wire [RBW:0] c_len = e_scal ? {{RBW{1'b0}}, 1'b1} : q_seglen[cp];
     wire [SW-1:0] nxt_slot = e_j[SW-1:0];
     wire        slot_free = ~sl_busy[nxt_slot] & ~sl_pend1[nxt_slot] & ~sl_pend2[nxt_slot] & (sl_cool[nxt_slot] == 3'd0);
-    // in-flight accounting: a POP decision at t pops the lane FIFO at t+3 (registered ex_v, lane control and
-    // operand stages), an issue pops the keep FIFO at t+1: the decisions still in flight are subtracted
-    reg  [2:0]  pop_fire_d;
+    // in-flight accounting: a POP decision at t pops the lane FIFO at t+4 (registered ex_v, broadcast register,
+    // lane control and operand stages), an issue pops the keep FIFO at t+1: the decisions still in flight are
+    // subtracted.  STORE: a decision at t pushes the lane's 4-deep store FIFO at t+4 and st_busy shows it from
+    // t+5, so up to 4 decisions are unseen; a STORE is not decided when the 4 previous cycles all decided one.
+    reg  [3:0]  pop_fire_d;
+    reg  [3:0]  st_fire_d;
     reg  [1:0]  mk_end_d;
-    wire [3:0]  pop_inflight = {3'd0, pop_fire_d[0]} + {3'd0, pop_fire_d[1]} + {3'd0, pop_fire_d[2]};
+    wire [3:0]  pop_inflight = {3'd0, pop_fire_d[0]} + {3'd0, pop_fire_d[1]} + {3'd0, pop_fire_d[2]} + {3'd0, pop_fire_d[3]};
     wire [2:0]  mk_pend = {2'd0, mk_end_d[0]} + {2'd0, mk_end_d[1]};
     wire        pop_ok = (sfu_cnt_min > pop_inflight);
     wire        mk_ok = (mk_cnt_min > mk_pend);
@@ -273,7 +279,7 @@ module vu_seq #(
     wire        t_ok = (t_opt == O_POP) ? pop_ok :
                        (t_opt == O_ACC) ? acc_room_all :
                        (t_opt == O_OUT) ? ob_room_all :
-                       (t_opt == O_STORE) ? st_ok_all : 1'b1;
+                       (t_opt == O_STORE) ? (st_ok_all & ~(&st_fire_d)) : 1'b1;
     wire        t_fire = e_run & sl_busy[turn] & t_ok & t_ord;
     integer i;
     always @(posedge clk) begin
@@ -281,12 +287,14 @@ module vu_seq #(
         mk_pop <= 1'b0; mk_start <= 1'b0; wr_req <= 1'b0; e_done <= 1'b0; dr_done <= 1'b0; fl_done <= 1'b0;
         if (!rst_n) begin
             e_run <= 1'b0; e_scal <= 1'b0; sl_busy <= {NS{1'b0}}; turn <= {SW{1'b0}}; e_j <= {(RBW+1){1'b0}};
-            sl_pend1 <= {NS{1'b0}}; sl_pend2 <= {NS{1'b0}}; dr_cnt <= 3'd0; pop_fire_d <= 3'b000; mk_end_d <= 2'b00;
+            sl_pend1 <= {NS{1'b0}}; sl_pend2 <= {NS{1'b0}}; dr_cnt <= 3'd0; pop_fire_d <= 4'b0000; st_fire_d <= 4'b0000;
+            mk_end_d <= 2'b00;
             for (i = 0; i < NS; i = i + 1) begin sl_cool[i] <= 3'd0; sl_pc[i] <= 4'd0; sl_seq[i] <= {(RBW+1){1'b0}}; end
             for (i = 0; i < 7; i = i + 1) nseq[i] <= {(RBW+1){1'b0}};
         end else begin
             turn <= turn + 1'b1;
-            pop_fire_d <= {pop_fire_d[1:0], t_fire & (t_opt == O_POP)};
+            pop_fire_d <= {pop_fire_d[2:0], t_fire & (t_opt == O_POP)};
+            st_fire_d <= {st_fire_d[2:0], t_fire & (t_opt == O_STORE)};
             mk_end_d <= {mk_end_d[0], can_issue & c_usekeep & ~e_scal & e_grp_end};
             for (i = 0; i < NS; i = i + 1) if (sl_cool[i] != 3'd0) sl_cool[i] <= sl_cool[i] - 3'd1;
             sl_pend1 <= {NS{1'b0}};
@@ -329,9 +337,10 @@ module vu_seq #(
             if (e_run & (e_j >= c_len) & (sl_busy == {NS{1'b0}}) & (sl_pend1 == {NS{1'b0}}) & (sl_pend2 == {NS{1'b0}}) & ~iss_v) begin
                 e_run <= 1'b0; e_done <= 1'b1;
             end
-            // drain: six cycles for the write-backs and FIFO pushes, then close the output registers
+            // drain: seven cycles for the write-backs and FIFO pushes (six + the broadcast register), then close
+            // the output registers
             if (cs == C_DRAIN) begin
-                if (dr_cnt == 3'd6) begin
+                if (dr_cnt == 3'd7) begin
                     dr_cnt <= 3'd0; dr_done <= 1'b1;
                     if ((c_kind == K_ELEM) & c_out) ob_flush <= 1'b1;
                 end else dr_cnt <= dr_cnt + 3'd1;
@@ -340,7 +349,7 @@ module vu_seq #(
             if (cs == C_FLUSH) begin
                 case (dr_cnt)
                     3'd0: if (acc_idle_all) begin acc_flush <= 1'b1; dr_cnt <= 3'd1; end
-                    3'd1, 3'd2: dr_cnt <= dr_cnt + 3'd1;
+                    3'd1, 3'd2, 3'd3, 3'd4: dr_cnt <= dr_cnt + 3'd1;   // broadcast register + registered acc_idle
                     default: if (acc_idle_all) begin dr_cnt <= 3'd0; fl_done <= 1'b1; end
                 endcase
             end
@@ -364,6 +373,7 @@ module vu_seq #(
     reg  [6:0]  xcnt;
     reg  [VW:0] x_r;
     reg  [2:0]  x_st;
+    reg  [1:0]  x_wt;                     // settle: xl_sel -> broadcast register -> lane xl_val register (P8c)
     wire        x_ov;
     wire [31:0] x_y;
     localparam [2:0] X_IDLE = 3'd0, X_ROW = 3'd1, X_WROW = 3'd2, X_ICH = 3'd3, X_WCH = 3'd4, X_FL = 3'd5, X_WFL = 3'd6,
@@ -375,13 +385,13 @@ module vu_seq #(
     always @(posedge clk) begin
         xl_done <= 1'b0; xlf_done <= 1'b0;
         if (!rst_n) begin
-            x_st <= X_IDLE; x_r <= {(VW+1){1'b0}}; xcnt <= 7'd0; xl_sel <= 1'b0; xl_row <= {VW{1'b0}};
+            x_st <= X_IDLE; x_r <= {(VW+1){1'b0}}; xcnt <= 7'd0; xl_sel <= 1'b0; xl_row <= {VW{1'b0}}; x_wt <= 2'd0;
         end else begin
             if (start & ~busy & d_x_reset) begin xp <= 32'd0; xtot_c <= 32'd0; xcnt <= 7'd0; end
             case (x_st)
                 X_IDLE: begin
                     if (cs == C_XL & ~xl_done) begin
-                        x_r <= {(VW+1){1'b0}}; xl_sel <= c_xls2; xl_row <= {VW{1'b0}};
+                        x_r <= {(VW+1){1'b0}}; xl_sel <= c_xls2; xl_row <= {VW{1'b0}}; x_wt <= 2'd2;
                         x_st <= X_WROW;                           // settle the lane mux, then issue
                     end else if (cs == C_XLFL & ~xlf_done) begin
                         if (c_xlchunk & (xcnt != 7'd0)) x_st <= X_FL;
@@ -392,7 +402,8 @@ module vu_seq #(
                     end
                 end
                 X_WROW: begin
-                    if (x_r >= q_nrows[cp]) begin xl_done <= 1'b1; x_st <= X_IDLE; end
+                    if (x_wt != 2'd0) x_wt <= x_wt - 2'd1;
+                    else if (x_r >= q_nrows[cp]) begin xl_done <= 1'b1; x_st <= X_IDLE; end
                     else x_st <= X_ROW;
                 end
                 X_ROW: x_st <= X_WCH;                              // issued: wait for the result (2 cycles)

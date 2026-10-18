@@ -12,6 +12,11 @@
 // Ordering (docs/p6a_report.md section 2): every accepted request stays in the pending queue (2^RQL
 // entries, word range [lo, hi]) until its last beat has arrived; mm_top blocks overlapping writes
 // against these entries and blocks this port's next request with `blk` while it overlaps a pending write.
+// P8c timing (PLAN R13): a request is first taken into the request register (rq_*), which is free when empty
+// or when its request moves into the pending queue this cycle, so req_ready depends on registers only (no
+// req_addr -> req_ready path through the RAW compare).  The RAW check (`blk`) is made on the registered request,
+// and mm_top's WAR check of the write channels sees it (rq_v / rq_lo / rq_len), so the order point of a read is
+// its acceptance into the request register.  Cost: +1 cycle from request to AR; one request per cycle as before.
 module mm_rdport #(
     parameter AXL = 3,                       // log2 words per AXI beat (1, 2, 3 = 64, 128, 256 bit)
     parameter RFL = 5,                       // log2 return FIFO depth in AXI beats (>= 4)
@@ -28,7 +33,10 @@ module mm_rdport #(
     output reg                dat_valid,
     input  wire               dat_ready,
     output reg  [255:0]       dat,
-    input  wire               blk,           // incoming request overlaps a pending write (mm_top)
+    input  wire               blk,           // registered request overlaps a pending write (mm_top)
+    output reg                rq_v,          // request register (to mm_top's RAW / WAR checks)
+    output reg  [29:0]        rq_lo,         // its word address
+    output reg  [6:0]         rq_len,
     output wire               ar_valid,
     input  wire               ar_ready,
     output wire [29-AXL:0]    ar_line,       // AXI beat index (byte address >> (AXL + 2))
@@ -52,8 +60,8 @@ module mm_rdport #(
     reg  [6:0]      q_n  [0:RQ-1];
     reg  [5:0]      q_br [0:RQ-1];           // beats still to arrive
     reg  [RQL:0]    q_cnt, q_sp;             // entries, index of the entry being split
-    wire [29:0]     in_a  = req_addr[31:2];
-    wire [6:0]      in_n  = req_len;
+    wire [29:0]     in_a  = rq_lo;
+    wire [6:0]      in_n  = rq_len;
     wire [AXL-1:0]  in_o  = in_a[AXL-1:0];
     /* verilator lint_off UNUSEDSIGNAL */   // low bits: offset within the last beat
     wire [7:0]      in_ow = {{(8-AXL){1'b0}}, in_o} + {1'b0, in_n} - 8'd1;
@@ -62,8 +70,13 @@ module mm_rdport #(
     /* verilator lint_on UNUSEDSIGNAL */
     wire [RQL:0]    q_tail;
     wire            meta_rdy;
-    assign req_ready = (q_cnt != RQ[RQL:0]) && meta_rdy && !blk;
-    wire            acc = req_valid && req_ready;
+    wire            acc = rq_v && (q_cnt != RQ[RQL:0]) && meta_rdy && !blk;   // request register -> queue
+    assign req_ready = !rq_v || acc;
+    always @(posedge clk) begin
+        if (!rst_n) rq_v <= 1'b0;
+        else if (req_ready) rq_v <= req_valid;
+        if (req_ready && req_valid) begin rq_lo <= req_addr[31:2]; rq_len <= req_len; end
+    end
     wire            arrive_last = r_valid && (q_br[0] == 6'd1);
     assign q_tail = q_cnt - {{RQL{1'b0}}, arrive_last};
     genvar gi;
@@ -203,6 +216,6 @@ module mm_rdport #(
         if (take)
             for (md = 0; md < 8; md = md + 1) hold[md] <= emit ? comb[md+8] : comb[md];
     end
-    assign idle = (q_cnt == {(RQL+1){1'b0}}) && !mf_v && !dat_valid;
+    assign idle = !rq_v && (q_cnt == {(RQL+1){1'b0}}) && !mf_v && !dat_valid;
 endmodule
 `default_nettype wire

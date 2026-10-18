@@ -9,6 +9,11 @@
 // words) + 256-bit beats in order, wr beats + word mask, mk keep-bit requests (index) + MKW-bit
 // responses; P6 attaches the same DMA.
 // Lane = row for every row reduction (reduction order independent of V, docs/dataflow.md 5).
+// P8c timing (PLAN R13): broadcast register stage.  Every sequencer -> lane control signal (element issue,
+// keep bit, micro-op, accumulator / max / output control, cross-lane select and result, s2 clear) is registered
+// once in this module before it fans out to the V lanes, so the lanes run one cycle behind the sequencer
+// (vu_seq accounts for it).  The column-vector banks are still read with the sequencer's issue (cycle t) and
+// their data is registered here, so it reaches the lanes with the registered issue + 1, as before.
 module vu_top #(
     parameter V    = 16,                // lanes (power of two, 4 .. 16)
     parameter VW   = 4,                 // log2 V
@@ -163,8 +168,8 @@ module vu_top #(
         .cv_we(cv_we), .cv_wpar(cv_wpar), .cv_waddr(cv_waddr), .cv_wd(cv_wd));
 
     // ------------------------------------------------------------------ column-vector banks (3 x 2 parities)
-    // read with the element issue (address j, or (seg_off + j) >> 5 in key-mask mode); data to the
-    // lanes one cycle later
+    // read with the sequencer's element issue (address j, or (seg_off + j) >> 5 in key-mask mode); the data is
+    // registered in the broadcast stage and reaches the lanes one cycle after their (registered) issue
     wire [RBW-1:0] cv_raddr = km_mode ? {5'd0, iss_addr[RBW-1:5]} : iss_addr;   // softmax rows fit one segment
     wire [31:0] cvq [0:5];
     generate
@@ -192,24 +197,48 @@ module vu_top #(
         .mk_req_valid(mk_req_valid), .mk_req_ready(mk_req_ready), .mk_req_idx(mk_req_idx),
         .mk_rsp_valid(mk_rsp_valid), .mk_rsp_keep(mk_rsp_keep));
 
+    // ------------------------------------------------------------------ broadcast register stage (P8c)
+    reg            b_iss_v, b_iss_abuf, b_ex_v, b_acc_start, b_acc_chunk, b_acc_flush, b_max_start, b_ob_flush,
+                   b_cur_abuf, b_xl_sel, b_sreg_clr;
+    reg  [RBW-1:0] b_iss_addr;
+    reg  [SW-1:0]  b_iss_slot, b_ex_slot;
+    reg  [35:0]    b_ex_uop;
+    reg  [31:0]    b_xtot;
+    reg  [V-1:0]   b_keep;
+    reg  [31:0]    b_cv0, b_cv1, b_cv2;
+    reg            b_km;
+    always @(posedge clk) begin
+        if (!rst_r[0]) begin
+            b_iss_v <= 1'b0; b_ex_v <= 1'b0; b_acc_start <= 1'b0; b_acc_flush <= 1'b0; b_max_start <= 1'b0;
+            b_ob_flush <= 1'b0; b_sreg_clr <= 1'b0;
+        end else begin
+            b_iss_v <= iss_v; b_ex_v <= ex_v; b_acc_start <= acc_start; b_acc_flush <= acc_flush;
+            b_max_start <= max_start; b_ob_flush <= ob_flush; b_sreg_clr <= sreg_clr;
+        end
+        b_iss_abuf <= iss_abuf; b_iss_addr <= iss_addr; b_iss_slot <= iss_slot; b_keep <= keep_bit;
+        b_ex_slot <= ex_slot; b_ex_uop <= ex_uop; b_acc_chunk <= acc_chunk; b_cur_abuf <= cur_abuf;
+        b_xl_sel <= xl_sel; b_xtot <= xtot;
+        b_cv0 <= cv0_d; b_cv1 <= cv1_d; b_cv2 <= cv2_d; b_km <= km_d;
+    end
+
     // ------------------------------------------------------------------ lanes
     generate
         for (gi = 0; gi < V; gi = gi + 1) begin : g_lane
-            wire isy = (l_s0[gi*32 +: 32] == {{(32-RBW){1'b0}}, iss_addr});
+            wire isy = (l_s0[gi*32 +: 32] == {{(32-RBW){1'b0}}, b_iss_addr});
             assign l_acc_room[gi] = (l_acc_cnt[gi*4 +: 4] < 4'd4);     // up to 3 pushes in flight (depth 8)
             assign l_st_ok[gi] = ~l_st_busy[gi];
             vu_lane #(.NS(NS), .SW(SW), .RB(RB), .RBW(RBW), .NOB(NOB), .LF(LF)) u_lane (
                 .clk(clk), .rst_n(rst_l[gi]),
                 .ld_we(lt_we[gi]), .ld_buf(lt_buf[gi]), .ld_addr(lt_addr[gi*RBW +: RBW]), .ld_d(lt_d[gi*32 +: 32]),
-                .sld_v(sld_v[gi] | sreg_clr), .sld_sel(sreg_clr ? 2'd2 : sld_sel), .sld_d(sreg_clr ? 32'd0 : sld_d[gi*32 +: 32]),
-                .iss_v(iss_v), .iss_abuf(iss_abuf), .iss_addr(iss_addr), .iss_slot(iss_slot),
-                .iss_keep(keep_bit[gi]), .iss_isy(isy), .km_d(km_d), .cv0_d(cv0_d), .cv1_d(cv1_d), .cv2_d(cv2_d),
-                .ex_v(ex_v), .ex_slot(ex_slot), .ex_uop(ex_uop), .c0(d_c0), .c1(d_c1), .c2(d_c2), .c3(d_c3), .ds(d_ds),
-                .acc_start(acc_start), .acc_chunk(acc_chunk), .acc_flush(acc_flush), .acc_idle(l_acc_idle[gi]), .acc_cnt(l_acc_cnt[gi*4 +: 4]),
-                .max_start(max_start), .sfu_out_cnt(l_sfu_cnt[gi*4 +: 4]), .st_busy(l_st_busy[gi]), .cur_abuf(cur_abuf),
-                .ob_flush(ob_flush), .ob_room(l_ob_room[gi]), .ob_rdy(l_ob_rdy[gi]), .ob_nw(l_ob_nw[gi*4 +: 4]),
+                .sld_v(sld_v[gi] | b_sreg_clr), .sld_sel(b_sreg_clr ? 2'd2 : sld_sel), .sld_d(b_sreg_clr ? 32'd0 : sld_d[gi*32 +: 32]),
+                .iss_v(b_iss_v), .iss_abuf(b_iss_abuf), .iss_addr(b_iss_addr), .iss_slot(b_iss_slot),
+                .iss_keep(b_keep[gi]), .iss_isy(isy), .km_d(b_km), .cv0_d(b_cv0), .cv1_d(b_cv1), .cv2_d(b_cv2),
+                .ex_v(b_ex_v), .ex_slot(b_ex_slot), .ex_uop(b_ex_uop), .c0(d_c0), .c1(d_c1), .c2(d_c2), .c3(d_c3), .ds(d_ds),
+                .acc_start(b_acc_start), .acc_chunk(b_acc_chunk), .acc_flush(b_acc_flush), .acc_idle(l_acc_idle[gi]), .acc_cnt(l_acc_cnt[gi*4 +: 4]),
+                .max_start(b_max_start), .sfu_out_cnt(l_sfu_cnt[gi*4 +: 4]), .st_busy(l_st_busy[gi]), .cur_abuf(b_cur_abuf),
+                .ob_flush(b_ob_flush), .ob_room(l_ob_room[gi]), .ob_rdy(l_ob_rdy[gi]), .ob_nw(l_ob_nw[gi*4 +: 4]),
                 .ob_data(l_ob_data[gi*256 +: 256]), .ob_pop(ob_pop[gi]),
-                .xl_sel(xl_sel), .xtot(xtot), .xl_val(l_xl[gi*32 +: 32]), .s0_o(l_s0[gi*32 +: 32]), .s1_o(l_s1[gi*32 +: 32]),
+                .xl_sel(b_xl_sel), .xtot(b_xtot), .xl_val(l_xl[gi*32 +: 32]), .s0_o(l_s0[gi*32 +: 32]), .s1_o(l_s1[gi*32 +: 32]),
                 .s3_o(l_s3[gi*32 +: 32]));
         end
     endgenerate

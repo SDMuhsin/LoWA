@@ -110,6 +110,13 @@ module mm_top #(
     wire [4*NA-1:0]   a_len;
     wire [NA-1:0]     r_v;
     wire [NR-1:0]     r_blk;
+    wire [NR-1:0]     q_rv;                    // read request registers (mm_rdport, P8c)
+    wire [30*NR-1:0]  q_rlo;
+    wire [7*NR-1:0]   q_rlen;
+    // P8c timing (PLAN R13): the seed is a per-step CSR value, registered here (one cycle) so that the input
+    // port does not drive the key schedule of rn_mkgen directly
+    reg  [63:0]       mk_seed_q;
+    always @(posedge clk) mk_seed_q <= mk_seed;
     wire [RQ*NR-1:0]  rp_v;
     wire [30*RQ*NR-1:0] rp_lo, rp_hi;
     wire [WE*NW-1:0]  wp_v;
@@ -128,7 +135,7 @@ module mm_top #(
     wire rst_c = rst_r[NRB-1];
     /* verilator lint_off UNUSEDSIGNAL */   // keep-bit source idle (debug); the unused source's configuration
     wire [NM-1:0]     mk_idle;
-    wire              mk_unused = (MK_DRAM != 0) ? (^mk_seed ^ ^mk_step ^ ^mk_site ^ ^mk_layer) : ^mk_base;
+    wire              mk_unused = (MK_DRAM != 0) ? (^mk_seed_q ^ ^mk_step ^ ^mk_site ^ ^mk_layer) : ^mk_base;
     /* verilator lint_on UNUSEDSIGNAL */
     generate
         for (gi = 0; gi < NA; gi = gi + 1) begin : g_rv
@@ -140,14 +147,14 @@ module mm_top #(
                 .req_valid(rd_req_valid[gi]), .req_ready(rd_req_ready[gi]),
                 .req_addr(rd_req_addr[32*gi +: 32]), .req_len(rd_req_len[7*gi +: 7]),
                 .dat_valid(rd_dat_valid[gi]), .dat_ready(rd_dat_ready[gi]), .dat(rd_dat[256*gi +: 256]),
-                .blk(r_blk[gi]),
+                .blk(r_blk[gi]), .rq_v(q_rv[gi]), .rq_lo(q_rlo[30*gi +: 30]), .rq_len(q_rlen[7*gi +: 7]),
                 .ar_valid(a_v[gi]), .ar_ready(a_g[gi]), .ar_line(a_line[LW*gi +: LW]), .ar_len(a_len[4*gi +: 4]),
                 .r_valid(r_v[gi]), .r_data(m_rdata),
                 .pend_v(rp_v[RQ*gi +: RQ]), .pend_lo(rp_lo[30*RQ*gi +: 30*RQ]), .pend_hi(rp_hi[30*RQ*gi +: 30*RQ]),
                 .idle(rd_idle[gi]));
-            // RAW: the offered request against every pending write
-            wire [29:0] lo = rd_req_addr[32*gi+2 +: 30];
-            wire [29:0] hi = lo + {23'd0, rd_req_len[7*gi +: 7]} - 30'd1;
+            // RAW: the port's registered request against every pending write
+            wire [29:0] lo = q_rlo[30*gi +: 30];
+            wire [29:0] hi = lo + {23'd0, q_rlen[7*gi +: 7]} - 30'd1;
             wire [WE*NW-1:0] ov;
             for (ge = 0; ge < WE * NW; ge = ge + 1) begin : g_ov
                 assign ov[ge] = wp_v[ge] && (lo <= wp_hi[30*ge +: 30]) && (wp_lo[30*ge +: 30] <= hi);
@@ -164,7 +171,7 @@ module mm_top #(
                     .ar_len(a_len[4*(NR+gi) +: 4]), .r_valid(r_v[NR+gi]), .r_data(m_rdata), .idle(mk_idle[gi]));
             end else begin : g_gen
                 rn_mkgen #(.MKW(MKW), .NCORE(gi == 0 ? MKNC0 : MKNC), .STAGES(MKST)) u_mk (
-                    .clk(clk), .rst_n(rst_r[NR+gi]), .seed(mk_seed), .step(mk_step),
+                    .clk(clk), .rst_n(rst_r[NR+gi]), .seed(mk_seed_q), .step(mk_step),
                     .site(mk_site[4*gi +: 4]), .layer(mk_layer[4*gi +: 4]),
                     .mk_req_valid(mk_req_valid[gi]), .mk_req_ready(mk_req_ready[gi]), .mk_req_idx(mk_req_idx[32*gi +: 32]),
                     .mk_rsp_valid(mk_rsp_valid[gi]), .mk_rsp_keep(mk_rsp_keep[MKW*gi +: MKW]), .idle(mk_idle[gi]));
@@ -221,7 +228,7 @@ module mm_top #(
     wire [32*AXW*NW-1:0] w_d;
     wire [AXW*NW-1:0]  w_m;
     wire [NW-1:0]      w_waw;
-    wire               rd_wait = |(rd_req_valid & r_blk) || |w_waw;   // a waiting read or write: close open bursts
+    wire               rd_wait = |(q_rv & r_blk) || |w_waw;   // a waiting read or write: close open bursts
     // P6c timing: the flush request is registered (one cycle later).  It only closes open write bursts early
     // so that a blocked access makes progress (the blocked access keeps it asserted); the ordering rules
     // (RAW / WAR / WAW at acceptance) are unchanged.  Removes the offered-request compare -> flush -> write
@@ -243,7 +250,8 @@ module mm_top #(
                 .pend_v(wp_v[WE*gi +: WE]), .pend_lo(wp_lo[30*WE*gi +: 30*WE]), .pend_hi(wp_hi[30*WE*gi +: 30*WE]),
                 .idle(wr_idle[gi]));
             assign w_bv[gi] = m_bvalid && (m_bid == gi);
-            // WAR: the offered beat against every pending read and every read request offered now
+            // WAR: the offered beat against every pending read and every registered read request (P8c: the
+            // request register is the read's order point, so a read accepted before this beat is always seen)
             wire [29:0] lo = wr_addr[32*gi+2 +: 30];
             wire [29:0] hi = lo + 30'd7;
             wire [RQ*NR-1:0] ov;
@@ -255,10 +263,10 @@ module mm_top #(
                 // [lo, lo + 7] overlaps [rlo, rlo + len - 1] (len >= 1), with one subtract instead of an add
                 // followed by a compare (P6b timing): dd = lo - rlo; lo < rlo: overlap iff rlo - lo <= 7, i.e.
                 // dd in [-7, -1]; lo >= rlo: overlap iff dd < len (<= 64)
-                wire [29:0] rlo = rd_req_addr[32*ge+2 +: 30];
+                wire [29:0] rlo = q_rlo[30*ge +: 30];
                 wire [30:0] dd  = {1'b0, lo} - {1'b0, rlo};
-                assign oi[ge] = rd_req_valid[ge] && (dd[30] ? ((&dd[29:3]) && (|dd[2:0]))
-                                                            : (!(|dd[29:7]) && (dd[6:0] < rd_req_len[7*ge +: 7])));
+                assign oi[ge] = q_rv[ge] && (dd[30] ? ((&dd[29:3]) && (|dd[2:0]))
+                                                     : (!(|dd[29:7]) && (dd[6:0] < q_rlen[7*ge +: 7])));
             end
             // WAW across channels (different AWIDs are not ordered by AXI): the beat waits for every
             // overlapping pending write of the other write channels

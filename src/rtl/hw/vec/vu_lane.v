@@ -15,6 +15,11 @@
 // register (stage O, cycle t+2) and issues the op from there; a result is written back in cycle t+4
 // (FMA: fp_fma STAGES = 2; MIN / MOV / POP: delayed to the same cycle).  A slot's next op comes
 // NS >= 8 cycles later, so there are no read-after-write hazards; FIFO pushes / pops happen at t+2.
+// P8c timing (PLAN R13): the status outputs to the sequencer are registers.  sfu_out_cnt, acc_cnt, st_busy and
+// ob_room are registered from the next state (occupancy counters / next-state pointers), so they change in the
+// same cycle as before; acc_idle and xl_val are registered copies (one cycle later; vu_seq waits one more cycle).
+// The control inputs come through vu_top's broadcast register, i.e. one cycle after the sequencer decided, which
+// is why ob_room allows one more push in flight than before (vu_seq likewise for STORE / POP / ACC).
 module vu_lane #(
     parameter NS   = 8,                 // barrel slots (elements in flight), power of two >= 4
     parameter SW   = 3,                 // log2 NS
@@ -90,7 +95,10 @@ module vu_lane #(
     reg  [2:0]  stf_wp, stf_rp;
     wire        stf_ne = (stf_wp != stf_rp);
     wire        st_fire = stf_ne & ~iss_v;
-    assign st_busy = ((stf_wp - stf_rp) >= 3'd1);                       // up to 3 pushes in flight (depth 4)
+    // st_busy: >= 1 pending store (registered from the next occupancy); the 4-deep FIFO is protected by vu_seq,
+    // which never decides a STORE when the 4 previous cycles all decided one (up to 4 pushes in flight, P8c)
+    reg         st_busy_r;
+    assign st_busy = st_busy_r;
     wire        b0_we = (ld_we & ~ld_buf) | (st_fire & ~cur_abuf);
     wire        b1_we = (ld_we &  ld_buf) | (st_fire &  cur_abuf);
     wire [RBW-1:0] b0_a = (ld_we & ~ld_buf) ? ld_addr : st_fire ? stf_a[stf_rp[1:0]] : iss_addr;
@@ -270,7 +278,9 @@ module vu_lane #(
     assign s0_o = s0;
     assign s1_o = s1;
     assign s3_o = s3;
-    assign xl_val = xl_sel ? s2 : tot0;
+    reg  [31:0] xl_val_r;                   // registered (P8c): one cycle after xl_sel / tot0 / s2
+    always @(posedge clk) xl_val_r <= xl_sel ? s2 : tot0;
+    assign xl_val = xl_val_r;
 
     // ------------------------------------------------------------------ SFU with FIFOs
     reg  [34:0] sfi [0:7];
@@ -287,10 +297,12 @@ module vu_lane #(
     reg  [3:0]  sfo_wp, sfo_rp;
     wire        sfu_pop = ex_v_x & (u_opt == O_POP);
     assign sfo_y = sfo[sfo_rp[2:0]];
-    assign sfu_out_cnt = sfo_wp - sfo_rp;
+    reg  [3:0]  sfo_cnt;                    // = sfo_wp - sfo_rp, kept as a register (P8c)
+    assign sfu_out_cnt = sfo_cnt;
     always @(posedge clk) begin
-        if (!rst_n) begin sfi_wp <= 4'd0; sfi_rp <= 4'd0; sfo_wp <= 4'd0; sfo_rp <= 4'd0; end
+        if (!rst_n) begin sfi_wp <= 4'd0; sfi_rp <= 4'd0; sfo_wp <= 4'd0; sfo_rp <= 4'd0; sfo_cnt <= 4'd0; end
         else begin
+            sfo_cnt <= sfo_cnt + {3'd0, sfu_ov} - {3'd0, sfu_pop};
             if (sfu_push) sfi_wp <= sfi_wp + 4'd1;
             if (sfi_ne & sfu_rdy) sfi_rp <= sfi_rp + 4'd1;
             if (sfu_ov) sfo_wp <= sfo_wp + 4'd1;
@@ -302,9 +314,11 @@ module vu_lane #(
 
     // ------------------------------------------------------------------ store FIFO
     wire st_push = ex_v_x & (u_opt == O_STORE);
+    wire [2:0] stf_occ_n = (stf_wp + {2'd0, st_push}) - (stf_rp + {2'd0, st_fire});
     always @(posedge clk) begin
-        if (!rst_n) begin stf_wp <= 3'd0; stf_rp <= 3'd0; end
+        if (!rst_n) begin stf_wp <= 3'd0; stf_rp <= 3'd0; st_busy_r <= 1'b0; end
         else begin
+            st_busy_r <= (stf_occ_n != 3'd0);
             if (st_push) stf_wp <= stf_wp + 3'd1;
             if (st_fire) stf_rp <= stf_rp + 3'd1;
         end
@@ -317,7 +331,8 @@ module vu_lane #(
     reg  [64:0] af [0:AFD-1];
     reg  [3:0]  af_wp, af_rp;
     wire        af_ne = (af_wp != af_rp);
-    assign acc_cnt = af_wp - af_rp;
+    reg  [3:0]  acc_cnt_r;                  // = af_wp - af_rp, kept as a register (P8c)
+    assign acc_cnt = acc_cnt_r;
     wire        acc_push = ex_v_x & (u_opt == O_ACC);
     reg  [31:0] p0, p1;
     reg  [6:0]  cn0, cn1;
@@ -348,14 +363,18 @@ module vu_lane #(
     reg  [1:0] q_ww, q_kk;
     wire       ret_w = q_ww[1], ret_kind = q_kk[1];
     wire       cn_hit0 = (cn0 == KC[6:0] - 7'd1), cn_hit1 = (cn1 == KC[6:0] - 7'd1);
-    assign acc_idle = ~af_ne & ~busy[0] & ~busy[1] & ~pend_chunk[0] & ~pend_chunk[1] & ~fl_pend[0] & ~fl_pend[1] & ~flushing;
+    reg         acc_idle_r;                 // registered copy (P8c): one cycle later than the state it reports
+    assign acc_idle = acc_idle_r;
     always @(posedge clk) begin
         if (!rst_n) begin
             af_wp <= 4'd0; af_rp <= 4'd0; busy <= 2'b00; pend_chunk <= 2'b00; fl_pend <= 2'b00; flushing <= 1'b0;
+            acc_cnt_r <= 4'd0; acc_idle_r <= 1'b1;
             cn0 <= 7'd0; cn1 <= 7'd0; chunk_m <= 1'b0;
         end else begin
             if (acc_push) af_wp <= af_wp + 4'd1;
             if (af_pop) af_rp <= af_rp + 4'd1;
+            acc_cnt_r <= acc_cnt_r + {3'd0, acc_push} - {3'd0, af_pop};
+            acc_idle_r <= ~af_ne & ~busy[0] & ~busy[1] & ~pend_chunk[0] & ~pend_chunk[1] & ~fl_pend[0] & ~fl_pend[1] & ~flushing;
             if (ai_v) busy[ai_w] <= 1'b1;
             if (afma_ov) begin
                 busy[ret_w] <= 1'b0;
@@ -404,26 +423,30 @@ module vu_lane #(
     reg  [OBW-1:0] ob_wsel, ob_rsel;
     wire         out_push = ex_v_x & (u_opt == O_OUT);
     wire         ob_close = (out_push & (ob_wpos == 3'd7)) | (ob_flush & (ob_wpos != 3'd0));
-    wire [OBW-1:0] ob_wnext = ob_wsel + 1'b1;
-    assign ob_room = ~ob_full[ob_wsel] & ((ob_wpos < 3'd5) | ~ob_full[ob_wnext]);   // up to 3 pushes in flight
+    // ob_room: registered from the next state (P8c); up to 4 pushes in flight (the broadcast register adds one)
+    reg  [NOB-1:0] ob_full_n;
+    reg  [2:0]     ob_wpos_n;
+    reg  [OBW-1:0] ob_wsel_n;
+    always @* begin
+        ob_full_n = ob_full; ob_wpos_n = ob_wpos; ob_wsel_n = ob_wsel;
+        if (out_push) ob_wpos_n = ob_wpos + 3'd1;
+        if (ob_close) begin ob_full_n[ob_wsel] = 1'b1; ob_wpos_n = 3'd0; ob_wsel_n = ob_wsel + 1'b1; end
+        if (ob_pop) ob_full_n[ob_rsel] = 1'b0;
+    end
+    wire [OBW-1:0] ob_wnext_n = ob_wsel_n + 1'b1;
+    reg            ob_room_r;
+    assign ob_room = ob_room_r;
     assign ob_rdy = ob_full[ob_rsel];
     assign ob_nw = ob_n[ob_rsel];
     assign ob_data = ob[ob_rsel];
     always @(posedge clk) begin
         if (!rst_n) begin
-            ob_full <= {NOB{1'b0}}; ob_wpos <= 3'd0; ob_wsel <= {OBW{1'b0}}; ob_rsel <= {OBW{1'b0}};
+            ob_full <= {NOB{1'b0}}; ob_wpos <= 3'd0; ob_wsel <= {OBW{1'b0}}; ob_rsel <= {OBW{1'b0}}; ob_room_r <= 1'b1;
         end else begin
-            if (out_push) ob_wpos <= ob_wpos + 3'd1;
-            if (ob_close) begin
-                ob_full[ob_wsel] <= 1'b1;
-                ob_n[ob_wsel] <= out_push ? 4'd8 : {1'b0, ob_wpos};
-                ob_wpos <= 3'd0;
-                ob_wsel <= ob_wsel + 1'b1;
-            end
-            if (ob_pop) begin
-                ob_full[ob_rsel] <= 1'b0;
-                ob_rsel <= ob_rsel + 1'b1;
-            end
+            ob_full <= ob_full_n; ob_wpos <= ob_wpos_n; ob_wsel <= ob_wsel_n;
+            ob_room_r <= ~ob_full_n[ob_wsel_n] & ((ob_wpos_n < 3'd4) | ~ob_full_n[ob_wnext_n]);
+            if (ob_close) ob_n[ob_wsel] <= out_push ? 4'd8 : {1'b0, ob_wpos};
+            if (ob_pop) ob_rsel <= ob_rsel + 1'b1;
         end
         if (out_push) ob[ob_wsel][ob_wpos * 32 +: 32] <= opa_z;
     end

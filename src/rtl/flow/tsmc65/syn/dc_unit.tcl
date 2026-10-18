@@ -71,6 +71,23 @@ foreach k $kids {
     if {![file exists $f]} { puts "T65_ERROR child $k not built ($f)"; exit 1 }
     set fh [open $f]; set kn [string trim [read $fh]]; close $fh
     set pn $kn
+    # per-parent copy (link `copy`): the child's design is <child>__<design>; read it, re-link the instances of
+    # the elaborated <design> to it and drop the elaborated one
+    set orig [string range $kn [string length "${k}__"] end]
+    if {[t65_hier $k copy] && [string match "${k}__*" $kn] && [sizeof_collection [get_designs -quiet $orig]]} {
+        if {$abs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
+        set before [get_object_name [get_designs]]
+        read_ddc $hroot/$k/$k.ddc
+        if {$abs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
+        current_design $design            ;# read_ddc made the child current
+        set oc [get_cells -quiet -hierarchical -filter "ref_name==$orig"]
+        puts "T65_COPY child $k: [sizeof_collection $oc] instances of $orig -> $kn"
+        if {[sizeof_collection $oc] == 0} { puts "T65_ERROR child $k: no instance of $orig"; exit 1 }
+        change_link -all_instances $oc $kn
+        remove_design $orig
+        dict set kid_design $k $kn
+        continue
+    }
     if {[sizeof_collection [get_designs -quiet $kn]] == 0} {
         set pn ""
         foreach c [get_object_name [get_designs -quiet *]] {
@@ -125,6 +142,13 @@ foreach d $refs {
     incr nren
 }
 puts "T65_RENAMED $nren"
+# per-parent copy: the top design itself carries the block prefix (before the abstraction is written)
+if {[t65_hier $block copy]} {
+    rename_design $design ${block}__$design
+    current_design ${block}__$design
+    set design ${block}__$design
+    puts "T65_COPY_NAME $design"
+}
 if {!$abs} { dict for {k kn} $kid_design { dict set kid_design $k ${block}__$kn } }
 current_design $design
 change_names -rules verilog -hierarchy
@@ -142,6 +166,11 @@ report_timing -delay_type min -max_paths 10 -nosplit > $out/rpt/timing_min.rpt
 report_constraint -all_violators -nosplit > $out/rpt/violators.rpt
 check_timing                              > $out/rpt/check_timing.rpt
 report_clock_gating -nosplit              > $out/rpt/clock_gating.rpt
+# P8c: the worst path of every violating endpoint group, timed in this session (a fresh session that reloads the
+# .ddc cannot match all abstraction pins, see tools/dc_paths); the text goes into the summary
+if {[catch {set fo [open $out/groups.txt w]; t65_group_paths $fo $out/rpt/violators.rpt; close $fo} e]} {
+    puts "T65_NOTE group paths: $e"
+}
 if {[catch {t65_unit_summary $out/summary.txt $block $design $params $period $corner $topo $io $kid_design \
         $out/rpt/area_hier.rpt $t0 $abs $hroot} e]} { puts "T65_ERROR summary: $e" }
 # the block abstraction (for parents linking with `abs`) goes into the .ddc with the full netlist

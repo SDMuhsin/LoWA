@@ -3,4 +3,4 @@ T65_RUN=<REMOTE_RUNNER>               # command that runs one shell command on t
 T65_HOST=<SSH_HOST_ALIAS>             # ssh host alias for rsync (the runner's master connection is reused)
 T65_CHECKOUT=<CLONE_DIR>              # repository clone on the server, relative to the remote home (git pull)
 T65_WIP=<WORK_DIR>                    # pre-push work tree on the server (rsync of hw/ + flow/), relative to home
-T65_TREE=checkout                     # which src/rtl the syn65-* targets run in: checkout | wip
+T65_TREE=${T65_TREE:-checkout}                   # which src/rtl the syn65-* targets run in: checkout | wip

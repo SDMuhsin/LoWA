@@ -159,6 +159,7 @@ module gm_top #(
 
     // loader
     wire                 tq_valid, tq_ready, tq_kind, tq_buf, tq_trn, tile_done, tile_done_kind, tile_done_buf;
+    wire                 tile_done_l, tile_done_kind_l, tile_done_buf_l;
     wire [31:0]          tq_addr, tq_rs;
     wire [NW-1:0]        tq_n;
     wire [KW:0]          tq_kt;
@@ -171,7 +172,16 @@ module gm_top #(
         .x_busy(x_busy | x_hold), .w_busy(w_busy | w_hold),
         .xw_valid(xw_valid), .xw_buf(xw_buf), .xw_lane(xw_lane), .xw_addr(xw_addr), .xw_data(xw_data), .xw_we(xw_we),
         .ww_valid(ww_valid), .ww_buf(ww_buf), .ww_lane(ww_lane), .ww_addr(ww_addr), .ww_data(ww_data), .ww_we(ww_we),
-        .tile_done(tile_done), .tile_done_kind(tile_done_kind), .tile_done_buf(tile_done_buf));
+        .tile_done(tile_done_l), .tile_done_kind(tile_done_kind_l), .tile_done_buf(tile_done_buf_l));
+    // P8c: the feeders register their write requests (one cycle), so tile_done is delayed by one cycle to
+    // keep meaning "the last beat has been written" for gm_ctrl and the merge engine
+    reg                  tile_done_q, tile_done_kind_q, tile_done_buf_q;
+    always @(posedge clk) begin
+        if (!rst_r[3]) tile_done_q <= 1'b0;
+        else           tile_done_q <= tile_done_l;
+        tile_done_kind_q <= tile_done_kind_l; tile_done_buf_q <= tile_done_buf_l;
+    end
+    assign tile_done = tile_done_q; assign tile_done_kind = tile_done_kind_q; assign tile_done_buf = tile_done_buf_q;
     assign w_tile_done = tile_done & tile_done_kind;
     assign w_tile_buf  = tile_done_buf;
 

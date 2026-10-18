@@ -12,6 +12,9 @@
 //        tile, and the column vectors cvec0..2 (segment of the row length, or the key-mask bit row
 //        b_idx when ld_km) into the cvec banks of parity ld_cvpar.
 // Both channels run concurrently; ld_done when every write has landed.
+// P8c timing (PLAN R13): an accepted rd0 beat is first registered (data, word count / address, op and the
+// one-hot target lane: the broadcast stage), then written into the lane holder one cycle later; the holder's
+// full check counts that beat, and ld_done waits for the stage to be empty.
 module vu_loader #(
     parameter V    = 16,
     parameter VW   = 4,
@@ -213,6 +216,20 @@ module vu_loader #(
     wire         tgt_free = ~hn_full[b0_r[VW-1:0]];
     assign rd0_dat_ready = b0_active & tgt_free;
     wire         beat0 = rd0_dat_valid & rd0_dat_ready;
+    // broadcast stage: the accepted beat, registered once before it fans out to the V lane holders
+    reg  [V-1:0] bs_mine;                     // one-hot target lane (0 = no beat)
+    reg  [255:0] bs_dat;
+    reg  [3:0]   bs_len;
+    reg  [RBW-1:0] bs_w0;
+    reg          bs_op;
+    integer      bl;
+    always @(posedge clk) begin
+        for (bl = 0; bl < V; bl = bl + 1)
+            /* verilator lint_off WIDTHEXPAND */
+            bs_mine[bl] <= rst_n & beat0 & (b0_r[VW-1:0] == bl);
+            /* verilator lint_on WIDTHEXPAND */
+        if (beat0) begin bs_dat <= rd0_dat; bs_len <= b_len; bs_w0 <= b_w0[RBW-1:0]; bs_op <= b0_op; end
+    end
     always @(posedge clk) begin
         if (!rst_n) begin
             b0_active <= 1'b0; b0_op <= 1'b0; b0_cb <= {CBW{1'b0}}; b0_r <= {(VW+1){1'b0}}; b0_k <= 3'd0;
@@ -248,14 +265,14 @@ module vu_loader #(
             reg          we_r, buf_r;
             reg  [RBW-1:0] a_r;
             reg  [31:0]  d_r;
-            wire         mine = beat0 & (b0_r[VW-1:0] == gl);
+            wire         mine = bs_mine[gl];
             wire [PI-1:0] rpi = rp[PI-1:0] & HBM[PI-1:0];
             wire [PI-1:0] wpi = wp[PI-1:0] & HBM[PI-1:0];
             wire         ne = (f_cnt != 4'd0);
             wire         pop = ne & ({1'b0, h_i} == f_n[rpi] - 4'd1);
             always @(posedge clk) begin
                 if (mine) begin
-                    f_d[wpi] <= rd0_dat; f_n[wpi] <= b_len; f_a[wpi] <= b_w0[RBW-1:0]; f_op[wpi] <= b0_op;
+                    f_d[wpi] <= bs_dat; f_n[wpi] <= bs_len; f_a[wpi] <= bs_w0; f_op[wpi] <= bs_op;
                 end
                 if (!rst_n) begin f_cnt <= 4'd0; wp <= 3'd0; rp <= 3'd0; h_i <= 3'd0; we_r <= 1'b0; end
                 else begin
@@ -270,7 +287,7 @@ module vu_loader #(
                 d_r <= f_d[rpi][h_i * 32 +: 32];
             end
             assign hn_nz[gl] = ne;
-            assign hn_full[gl] = (f_cnt == HB4);
+            assign hn_full[gl] = ((f_cnt + {3'd0, mine}) >= HB4);   // the beat in the broadcast stage counts
             assign lt_we[gl] = we_r;
             assign lt_buf[gl] = buf_r;
             assign lt_addr[gl*RBW +: RBW] = a_r;
@@ -278,7 +295,7 @@ module vu_loader #(
         end
     endgenerate
     wire        hold_any = |hn_nz;
-    wire        rd0_busy = r0_active | b0_active | (r0st != R_IDLE);
+    wire        rd0_busy = r0_active | b0_active | (r0st != R_IDLE) | (|bs_mine);
 
     // ------------------------------------------------------------------ rd1: scalars, ids, cvecs
     // job order: sreg0, sreg1, ids, cv0, cv1, cv2; each job = ceil(len / 64) requests

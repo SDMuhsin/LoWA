@@ -50,25 +50,32 @@ With CLS pruning (D6) layer 11 stores K, V for all tokens and the rest for 32 ro
 The DRAM traffic is dominated by operand reloads because a GF180 SRAM macro holds 256 B in 0.068 mm2:
 on-chip reuse is area-bound, not bandwidth-bound (budget.md section 3 shows the trade).
 
-## 3. On-chip SRAM banking (full16: R = C = 16, lambda = 4)
+## 3. On-chip RAM banking (full16: R = C = 16, lambda = 4; as built in hw/, reconciled in P8c)
 
-Macro = `gf180mcu_ocd_ip_sram__sram256x8m8wm1`, 256 x 8 bit, single port, 301.3 x 224.9 um,
-min period 17.09 ns (ss_125C_3v00), CLK->Q 12.6-14.8 ns (ss). A 32-bit lane = 4 macros side by side
-= 256 words.
+Every on-chip RAM is an `mm_sram_bank` (32-bit words, one port, read latency 1) with a technology backend
+(rtl_conventions.md): generic (simulation), gf180 (`gf180mcu_ocd_ip_sram__sram256x8m8wm1`, 256 x 8 bit,
+301.3 x 224.9 um, 4 macros per 32-bit x 256-word lane) or tsmc65 (latch register file, docs/p8b_report.md).
 
-| bank | macros | organisation | capacity | ports per cycle |
-|---|---|---|---|---|
-| WBUF x 2 (double buffer) | 2 x 64 | 16 lanes x 4 macros; lane c holds W rows c*4..c*4+3 x Kc = 64, k-major | 2 x 16 KiB | read 16 words (array), write 16 words (DMA + merge RMW) on the other buffer |
-| XBUF x 2 | 2 x 64 | 4 words wide x 16 macros deep; Br = 64 rows x Kc = 64 | 2 x 16 KiB | read 4 words (R/lambda), write via DMA on the other buffer |
-| ACC | 64 | 4 banks x (4 words wide x 4 deep); micro-tile i in bank i mod 4 | 16 KiB = 64 x 64 partials | 4 words read (preload of next tile) + 4 words write (drain of previous tile), different banks |
-| LoWA row buffers | 24 | dY row, X row: 4 wide x 3 deep (768 words) each | 6 KiB | 1 word/cycle each (7-word window = 7 cycles) |
-| LoWA atom accumulators | 4 | 256 words (one module) | 1 KiB | 1 RMW per atom |
-| DMA FIFOs | 8 | 2 x (4 wide) | 2 KiB | |
-| **total** | **356** | | **89 KiB** | 24.1 mm2 of macro area |
+| unit / bank | banks x words | organisation | words | KiB | ports per cycle |
+|---|---|---|---|---|---|
+| WBUF x 2 (gm_wfeed) | 32 x 256 | 2 buffers x 16 lanes; lane (c + k + 4q) mod 16, address {k, q}; Kc = 64 | 8,192 | 32 | all lanes of one buffer read {k, q}; DMA writes 8 lanes / merge RMW on the other |
+| XBUF x 2 (gm_xfeed) | 16 x 512 | 2 buffers x 8 lanes; lane (k + r) mod 8; Br = 64 rows x Kc = 64 | 8,192 | 32 | R / lambda = 4 row reads; DMA writes 8 lanes on the other buffer |
+| ACC x 2 halves (gm_drain) | 16 x 512 | 2 halves x 2 parities x 4 lanes; block n's epilogue reads one half while block n+1 accumulates in the other | 8,192 | 32 | 4-word RMW stream + 4-word epilogue read |
+| vector tile buffers (vu_lane) | 32 x 256 | 16 lanes x 2 row-segment buffers (A / B or double buffer) | 8,192 | 32 | 1 issue read + 1 load / store write per lane |
+| column vectors (vu_top) | 6 x 256 | cvec0..2 x 2 parities (double buffered) | 1,536 | 6 | 1 read (issue) + 1 load write |
+| LoWA rows (lw_sg) | 2 x 768 | dY row, X row | 1,536 | 6 | 1 word / cycle each |
+| LoWA atom accumulator + atom centres (lw_sg) | 2 x 256 | coefficient-gradient accumulators; atom centres (i, j) | 512 | 2 | 1 RMW per atom / 1 read |
+| LoWA merge directory + coefficients (lw_merge) | 2 x 512 | block directory (2 module slots x 256), coefficients (2 x 256) | 1,024 | 4 | 1 read each |
+| **total** | **106 banks** | | **37,376** | **146** | |
 
-Vector-unit V x V transpose stagers (2 in + 2 out, 16 x 16 words) are flops (~33k flops), because a
-one-word-per-lane port on macros would cost 4 macros per lane for only 16 words of depth.
-Hit lists, centres, and the 25 taps h_e are streamed (hit list) or held in flops (h_e, 25 words).
+The DMA return / write FIFOs (hw/mem) and the vector writer's output registers are flops.  In GF180 macros the
+146 KiB are 584 macros (39.6 mm2); on TSMC 65 nm the latch RF is 8.89 mm2 of cells at ss (p8b_report.md section 3).
+Until P8c this section listed the P0 plan, 356 macros = 89 KiB = 22,784 words: a single 4,096-word ACC (the
+RTL double-buffers it, P3), no vector-unit RAM (P4 built per-lane tile buffers and column-vector banks
+instead of the flop transpose stagers), LoWA 1,792 words (P5 added the atom-centre table and the merge directory / coefficient buffers), and
+512 words of DMA FIFOs counted as macros.  `docs/calc/budget.py onchip_words` now counts the RTL geometry.
+
+Hit lists are streamed; the 25 taps h_e are held in flops; the atom centres are in the lw_sg bank above.
 
 ## 4. Host <-> device bytes
 

@@ -7,7 +7,7 @@ proc t65_hier_load {} {
         lassign $line name mod params kids io link
         set ::T65_HIER($name) [dict create module $mod params [expr {$params eq "-" ? "" : $params}] \
             children [expr {$kids eq "-" ? {} : [split $kids ,]}] io $io \
-            link [expr {$link eq "abs" ? "abs" : "full"}]]
+            link [expr {$link eq "abs" ? "abs" : "full"}] copy [expr {$link eq "copy"}]]
     }
     close $fh
 }

@@ -201,3 +201,48 @@ proc t65_unit_summary_body {fh block design params period corner topo io kid_des
     catch {set mem [mem]}
     puts $fh [format "dc_wall_s %d dc_cpu_s %s dc_mem_kb %s" [expr {[clock seconds] - $t0}] $cpu $mem]
 }
+
+# ---- P8c: worst path per violating endpoint group (numbers + RTL instance names only)
+# Path split: the delay spent in each hierarchy region the path crosses, in order (consecutive points of one
+# region merged).  Region = the first two instance levels of the pin (one level for pins of top-level cells'
+# children, `top` for top-level cells and ports); digits are written as N to keep the line short.
+proc t65_path_split {p} {
+    set s ""; set prev 0.0; set cur ""; set acc 0.0
+    foreach_in_collection pt [get_attribute $p points] {
+        set a [get_attribute $pt arrival]; set c [split [get_object_name [get_attribute $pt object]] /]
+        set n [llength $c]
+        if {$n >= 4} { set k [join [lrange $c 0 1] /] } elseif {$n == 3} { set k [lindex $c 0] } else { set k top }
+        regsub -all {[0-9]+} $k N k
+        if {$k ne $cur && $cur ne ""} { append s [format " %s %.2f >" $cur $acc]; set acc 0.0 }
+        set cur $k; set acc [expr {$acc + $a - $prev}]; set prev $a
+    }
+    if {$cur ne ""} { append s [format " %s %.2f" $cur $acc] }
+    return $s
+}
+# Groups = setup violators of report_constraint -all_violators ($vrpt) with digits replaced by N; per group (the
+# $ng groups of largest TNS) the count, worst slack, TNS and the worst path with its split.
+proc t65_group_paths {fo vrpt {ng 30}} {
+    set fh [open $vrpt]; set on 0; set g_w [dict create]; set g_n [dict create]; set g_t [dict create]
+    while {[gets $fh line] >= 0} {
+        if {[string match {*max_delay/setup*} $line]} { set on 1; continue }
+        if {[regexp {^\s+(min_delay|max_transition|max_capacitance|max_fanout|max_leakage|max_area|min_capacitance|max_dynamic|max_total)} $line]} { set on 0 }
+        if {!$on || ![regexp {^\s*(\S+)\s.*\s(-[0-9.]+)\s*\(VIOLATED\)} $line -> ep sl]} continue
+        regsub -all {[0-9]+} $ep N g
+        if {![dict exists $g_w $g] || $sl < [lindex [dict get $g_w $g] 1]} { dict set g_w $g [list $ep $sl] }
+        dict incr g_n $g
+        dict set g_t $g [expr {([dict exists $g_t $g] ? [dict get $g_t $g] : 0.0) + $sl}]
+    }
+    close $fh
+    set gs {}
+    dict for {g t} $g_t { lappend gs [list $g $t] }
+    set gs [lsort -real -index 1 $gs]
+    puts $fo "groups [llength $gs] (setup violators by endpoint pattern, largest TNS first)"
+    foreach e [lrange $gs 0 [expr {$ng - 1}]] {
+        lassign $e g t; lassign [dict get $g_w $g] ep sl
+        set o [get_pins -quiet $ep]
+        if {[sizeof_collection $o] == 0} { set o [get_ports -quiet $ep] }
+        set p [expr {[sizeof_collection $o] ? [get_timing_paths -delay_type max -max_paths 1 -to $o] : ""}]
+        puts $fo [format "group %s n %d wns %s tns %.1f" $g [dict get $g_n $g] $sl $t]
+        if {$p ne "" && [sizeof_collection $p]} { puts $fo "  path [t65_path_line $p]"; puts $fo "  split[t65_path_split $p]" }
+    }
+}

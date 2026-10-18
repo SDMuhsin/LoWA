@@ -8,7 +8,7 @@ block=$1; period=${2:-4.0}; corner=${3:-ss}
 out=$ROOT/build/tsmc65/hier/$block
 sum=$ROOT/build/tsmc65/summary/hier_$block.txt
 mkdir -p "$out" "$ROOT/build/tsmc65/summary"
-rm -f "$out/design.txt" "$out/summary.txt"
+rm -f "$out/design.txt" "$out/summary.txt" "$out/groups.txt"
 export T65_ROOT=$ROOT T65_BLOCK=$block T65_PERIOD=$period T65_CORNER=$corner T65_TOPO=${T65_TOPO:-1} T65_OUT=$out
 export T65_CORES=${T65_CORES:-8}
 mode=""; [ "$T65_TOPO" = 1 ] && mode=-topographical_mode
@@ -22,4 +22,5 @@ if [ -f summary.txt ]; then
     "$ROOT/flow/tsmc65/tools/dclog_check.sh" "$out" >> "$sum"
     grep '^T65_' dc.log >> "$sum"
 fi
+[ -f groups.txt ] && cp -f groups.txt "$ROOT/build/tsmc65/summary/groups_$block.txt"
 echo "DC_DONE $block rc $rc errors $(grep '^Error' dc.log | grep -vc PROC-3) t65err $(grep -c '^T65_ERROR' dc.log) summary $([ -f summary.txt ] && echo yes || echo no)"

@@ -28,14 +28,21 @@ ss_125C_3v00**, the point the prior chip closed on this flow. SRAM (17.1 ns min 
 
 | config | PEs | step @ L=128 (overlapped / serial) | DRAM peak | macros (KiB) | logic mm2 | core mm2 |
 |---|---|---|---|---|---|---|
-| **full16** | 256 | **3.29 G cycles = 131.6 s** / 142.1 s (P6b DRAM-charged; P6a 135.0 s; compute-only 129.4 / 139.8 s; read-priority DRAM 185.6 s) | 800 MB/s | 356 (89) | 43.5 | **103** |
-| full16-lean (XBUF, ACC 1/4) | 256 | 297.3 s (DRAM-charged, P6b; P6a 300.7 s; compute-only 297.0 s) | 2,000 MB/s | 212 (53) | 43.5 | 91 |
-| mid8 | 64 | 475.1 s (not DRAM-bound) | 400 MB/s | 180 (45) | 13.3 | 37 |
-| shuttle2x1 | 2 | 14,662 s | 100 MB/s | 12 (3) | 0.9 | 2.5 |
-| shuttle1x1 | 1 | 28,144 s | 100 MB/s | 12 (3) | 0.7 | 2.3 |
+| **full16** | 256 | **3.29 G cycles = 131.6 s** / 142.1 s (P6b DRAM-charged; P6a 135.0 s; compute-only 129.4 / 139.8 s; read-priority DRAM 185.6 s) | 800 MB/s | 584 (146) | 43.5 | **122** |
+| full16-lean (XBUF, ACC 1/4) | 256 | 297.3 s (DRAM-charged, P6b; P6a 300.7 s; compute-only 297.0 s) | 2,000 MB/s | 392 (98) | 43.5 | 106 |
+| mid8 | 64 | 475.1 s (not DRAM-bound) | 400 MB/s | 296 (74) | 13.3 | 47 |
+| shuttle2x1 | 2 | 14,662 s | 100 MB/s | 9 (2) | 0.9 | 2.2 |
+| shuttle1x1 | 1 | 28,144 s | 100 MB/s | 9 (2) | 0.7 | 2.0 |
 
 (P2: logic and core use the measured FMA and SFU areas; P0's assumption gave 51.5 / 116, 51.5 / 104, 14.9 / 40,
 0.8 / 2.4, 0.7 / 2.1. `budget.py --p0` reproduces those.)
+
+(P8c: the macros column counts the on-chip RAM the RTL actually instantiates, `budget.py onchip_words`:
+full16 37,376 words = 146 KiB = gemm 24,576 (X / W buffers 2 x 4,096 each + ACC 2 halves x 4,096) + vector
+unit 9,728 (2 x 256-word tile buffers per lane + 6 column-vector banks) + LoWA 3,072 (dY / X rows 2 x 768, atom
+accumulator 256, atom centres 256, merge directory + coefficients 2 x 512); the DMA FIFOs are flops.  P0 to P8b
+quoted 356 macros = 89 KiB, the P0 plan: single ACC, no vector-unit RAM, LoWA 1,792 words, DMA FIFOs as
+macros.  Core estimates follow; the cycle and DRAM numbers do not depend on it.  docs/p8c_report.md section 5.)
 
 Why 16 x 16: (a) operand SRAM grows with R + C while compute grows with R * C, so the smallest array at
 which PE area and macro area are of the same order is ~16 x 16 (8 x 8: macros 12.2 mm2 vs PEs 11.0 mm2,

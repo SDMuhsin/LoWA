@@ -18,6 +18,10 @@
 // a buffer, read data valid the next cycle; it has priority over a DMA beat on the same lane
 // (err_conflict flags the dropped beat word; by protocol the merge only runs after the W tile has
 // been written and before the buffer is read).
+// P8c timing (PLAN R13): the DMA write request is registered per lane after the lane decode (wen_s / waddr_s /
+// wdata_s), so a beat reaches its banks one cycle after wr_valid (gm_top delays tile_done to match, so the merge
+// engine and the passes still start after the last write has landed).  The read address is the pass counter
+// (registers), so the bank port sees registers and one mux level.
 module gm_wfeed #(
     parameter COLS   = 16,
     parameter LAMBDA = 4,
@@ -149,14 +153,22 @@ module gm_wfeed #(
                             wdata = wdata | wr_data[j*32 +: 32];
                         end
                 end
+                reg           wen_s;
+                reg [AW-1:0]  waddr_s;
+                reg [31:0]    wdata_s;
+                always @(posedge clk) begin
+                    if (!rst_n) wen_s <= 1'b0;
+                    else        wen_s <= wen;
+                    waddr_s <= waddr; wdata_s <= wdata;
+                end
                 /* verilator lint_off WIDTHEXPAND */
                 wire mg_hit = mg_en && mg_buf == b && mg_lane == l;
                 wire rd_hit = rd_en && rd_buf == b;
                 /* verilator lint_on WIDTHEXPAND */
-                wire          en   = mg_hit | wen | rd_hit;
-                wire          we   = mg_hit ? mg_we : wen;
-                wire [AW-1:0] addr = mg_hit ? mg_addr : wen ? waddr : rd_addr;
-                wire [31:0]   d    = mg_hit ? mg_wdata : wdata;
+                wire          en   = mg_hit | wen_s | rd_hit;
+                wire          we   = mg_hit ? mg_we : wen_s;
+                wire [AW-1:0] addr = mg_hit ? mg_addr : wen_s ? waddr_s : rd_addr;
+                wire [31:0]   d    = mg_hit ? mg_wdata : wdata_s;
                 wire [31:0]   qq;
                 mm_sram_bank #(.WORDS(WORDS), .WIDTH(32), .AW(AW)) u_bank (
                     .clk(clk), .en(en), .we(we), .addr(addr), .d(d), .q(qq));
@@ -165,7 +177,7 @@ module gm_wfeed #(
                 end else begin : g_q1
                     assign q1[l] = qq;
                 end
-                assign conf[b*WL + l] = (mg_hit & wen) | (rd_hit & (wen | mg_hit));
+                assign conf[b*WL + l] = (mg_hit & wen_s) | (rd_hit & (wen_s | mg_hit));
             end
         end
     endgenerate

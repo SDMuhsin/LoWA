@@ -271,13 +271,36 @@ def step(c, B, L, cls_prune=True, C_LAB=2):
                 emb_bytes=emb_bytes, merge_bytes=merge_bytes)
 
 
+VU_RB = 256                                 # vector lane tile-buffer words (vu_lane RB)
+
+
+def onchip_words(c):
+    """On-chip RAM words (32 bit) as the RTL instantiates mm_sram_bank (P8c reconciliation, docs/p8c_report.md):
+    gemm: X and W tile buffers (double-buffered) + the ACC (gm_drain keeps two halves: block n's epilogue reads
+    one while block n+1 accumulates in the other); vec: two tile buffers per lane + 3 column vectors x 2 parities;
+    lowa: dY and X row buffers (D words), atom accumulator and atom centres (256 each), merge block directory and
+    coefficient buffers (512 each, two module slots).  The DMA return / write FIFOs of hw/mem are flops, not RAM."""
+    g = gemm_geom(c)
+    words_w = g["wbuf"] * SRAM_B // FP
+    words_x = g["xbuf"] * SRAM_B // FP
+    w = dict(gemm=c["dbuf"] * (words_w + words_x) + 2 * g["br"] * g["bc"],
+             vec=(2 * c["V"] + 6) * VU_RB if c["V"] > 1 else 0,
+             lowa=(2 * D + 256 + 256 + 2 * 512) if c["V"] > 1 else 0,
+             dma=0)
+    w["total"] = sum(w.values())
+    return w
+
+
 def area(c):
     g = gemm_geom(c)
     P = c["R"] * c["C"]
-    m_gemm = c["dbuf"] * (g["wbuf"] + g["xbuf"]) + g["acc"]
-    m_vec = 0                                           # vector staging = flop transpose buffers (below)
-    m_lowa = (2 * 12 + 4) if c["V"] > 1 else 0          # dY row, X row, atom accumulators
-    m_dma = 8 if c["V"] > 1 else 0
+    w = onchip_words(c)
+    # GF180 macro-equivalents (256 B each) of the RTL's on-chip RAM (P0 area model; the TSMC-65 port uses latch
+    # register files, docs/p8b_report.md)
+    m_gemm = math.ceil(w["gemm"] * FP / SRAM_B)
+    m_vec = math.ceil(w["vec"] * FP / SRAM_B)          # lane tile buffers + column-vector banks
+    m_lowa = math.ceil(w["lowa"] * FP / SRAM_B)
+    m_dma = 0                                           # DMA FIFOs are flops
     macros = m_gemm + m_vec + m_lowa + m_dma
     pe = P * pe_area_um2() / 1e6
     sfu = 60000.0 if P0_MODEL else SFU_UM2              # P0: assumption; P2: measured fp_sfu
@@ -290,7 +313,7 @@ def area(c):
     logic = pe + vec + lowa + rng + ctrl
     sram = macros * MACRO_MM2
     die_core = logic / UTIL + sram * HALO
-    return dict(P=P, macros=macros, m_gemm=m_gemm, sram_kb=macros * SRAM_B / 1024, pe=pe,
+    return dict(P=P, macros=macros, m_gemm=m_gemm, sram_kb=macros * SRAM_B / 1024, pe=pe, words=w,
                 logic=logic, sram=sram, core=die_core, geom=g)
 
 
@@ -340,6 +363,9 @@ def main():
               f" emb {s['emb_bytes']/1e6:.1f} MB, opt {s['opt_bytes']/1e6:.1f} MB)")
         print(f"  avg DRAM BW {s['dram_total']/(s['cyc_overlap']/f)/1e6:.0f} MB/s; GEMM-phase peak {g['bpm']*ar['P']*f/1e6:.0f} MB/s")
         print(f"  stash {s['stash']/1e9:.3f} GB; LoWA MACs {s['lowa_macs']/1e6:.0f} M; merge hits {s['merge_hits']/1e6:.1f} M; trainable {s['n_train']:,}")
+        wd = ar["words"]
+        print(f"  on-chip RAM (RTL): {wd['total']:,} words = {wd['total']*FP/1024:.0f} KiB (gemm {wd['gemm']:,}, vec {wd['vec']:,},"
+              f" lowa {wd['lowa']:,}; DMA FIFOs are flops)")
         print(f"  area: PE {ar['pe']:.1f} mm2, logic {ar['logic']:.1f} mm2, macros {ar['macros']} ({ar['sram_kb']:.1f} KiB) = {ar['sram']:.1f} mm2,"
               f" core est {ar['core']:.1f} mm2 (util {UTIL}, halo {HALO})")
     # host bytes / step

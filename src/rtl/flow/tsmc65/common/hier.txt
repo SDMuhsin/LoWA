@@ -7,7 +7,7 @@
 #   sub-block is compiled once and reused by every parent); `-` = none (the block is compiled flat).
 # io_pct: input / output delay on the block's own ports in % of the period (sdc/gen_sdc.tcl).  Units use 20;
 #   bank leaves use 40 because their address comes through the parent's control logic (tighter, not looser).
-# link (optional 6th column): `abs` = children are linked as block abstractions (interface logic only); every
+# link (optional 6th column): `copy` (leaves) = per-parent copy, see the bank copies below; `abs` = children are linked as block abstractions (interface logic only); every
 #   parent uses it except lane (its two banks are linked as full dont_touch netlists, so vu16 does not hold
 #   the bank256 abstraction twice; lane closes 4.0 ns that way).  Linking full netlists with dont_touch was tried first: DC topographical then places the
 #   children's cells spread over the parent's whole area and, the children being dont_touch, cannot re-buffer
@@ -29,18 +29,28 @@ sfu      fp_sfu        -                                         -              
 bank256  mm_sram_bank  WORDS=>256,WIDTH=>32,AW=>8                -                       40
 bank512  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9                -                       40
 bank768  mm_sram_bank  WORDS=>768,WIDTH=>32,AW=>10               -                       40
+# ---- per-parent bank copies (P8c): the same three shapes compiled once per parent that links them as block
+# abstractions.  Link column `copy`: the run renames its top design to <block>__<design> before writing the
+# abstraction, and the parent re-links its bank instances to that name (change_link), so gm16, vu16 and lw each
+# carry their own bank designs and the chip-level link never reads one design name from two .ddc files.
+bank512_gm  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9             -                       40 copy
+bank256_gm  mm_sram_bank  WORDS=>256,WIDTH=>32,AW=>8             -                       40 copy
+bank256_vu  mm_sram_bank  WORDS=>256,WIDTH=>32,AW=>8             -                       40 copy
+bank256_lw  mm_sram_bank  WORDS=>256,WIDTH=>32,AW=>8             -                       40 copy
+bank512_lw  mm_sram_bank  WORDS=>512,WIDTH=>32,AW=>9             -                       40 copy
+bank768_lw  mm_sram_bank  WORDS=>768,WIDTH=>32,AW=>10            -                       40 copy
 # ---- gemm: 16 x 16 PEs, NSFU 16
 pe       gm_pe         FMA_STAGES=>2,LAMBDA=>4,QW=>2             -                       20
 # gm_top 16x16 holds 24,576 latch words (x feeder, w feeder, drain: 8,192 each) and 256 PEs (~3M cells): the PEs
 # and banks are linked as block abstractions, everything else (array glue, feeders, drain, epilogue, loader,
 # ctrl) is compiled in the gm16 run, so cross-sub-unit paths (ctrl -> feeder -> bank address) are optimised
 # together.  (`@gm16/<instance>` blocks would split it further but nest abstractions; not used.)
-gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                pe,bank512,bank256      20 abs
+gm16     gm_top        ROWS=>16,COLS=>16,NSFU=>16                pe,bank512_gm,bank256_gm 20 abs
 # ---- vec: V = 16 lanes
 lane     vu_lane       NS=>8,SW=>3,RB=>256,RBW=>8,NOB=>2,LF=>2   bank256                 20
-vu16     vu_top        -                                         lane,bank256            20 abs
+vu16     vu_top        -                                         lane,bank256_vu         20 abs
 # ---- lowa
-lw       lw_top        -                                         bank256,bank512,bank768 20 abs
+lw       lw_top        -                                         bank256_lw,bank512_lw,bank768_lw 20 abs
 # ---- rng: the two Threefry mask-generator variants inside mm_top (keep channel 0: MKNC0 3 cores, 1: MKNC 9)
 rng9     rn_mkgen      MKW=>16,NCORE=>9,STAGES=>3                -                       20
 rng3     rn_mkgen      MKW=>16,NCORE=>3,STAGES=>3                -                       20

@@ -18,6 +18,10 @@
 // Write port: one DMA beat per cycle, word j to lane wr_lane[j] at wr_addr[j] (lanes distinct by
 // the layout above; wr_we[j] masks words beyond the tile).  A write and a read of the same lane in
 // one cycle never happen by protocol (err_conflict is a sticky flag if they do; the write wins).
+// P8c timing (PLAN R13): (a) the write request is registered per lane after the lane decode (wen_s / waddr_s /
+// wdata_s), so a beat reaches its banks one cycle after wr_valid (gm_top delays tile_done to match); (b) the
+// lane read request is registered too (ren_s / raddr_s), computed from the rows' next state, so the read is
+// issued in the same cycle as before (no latency change).  The bank port then sees two registers and one mux.
 module gm_xfeed #(
     parameter ROWS   = 16,
     parameter LAMBDA = 4,
@@ -87,7 +91,7 @@ module gm_xfeed #(
     // ------------------------------------------------------------------ per-row readers
     // row r: active after its token; issues the read of word k at phase 0 of k; holds (buf, lane)
     // for the data capture one cycle after the issue; the last read is at k = kt - 1.
-    wire [ROWS-1:0]     rd_req;             // read issue this cycle
+    wire [ROWS-1:0]     rd_req;             // read issue NEXT cycle (next-state of the rows, P8c)
     wire [ROWS-1:0]     rd_buf;
     wire [ROWS*XLW-1:0] rd_lane;
     wire [ROWS*AW-1:0]  rd_addr;
@@ -145,10 +149,30 @@ module gm_xfeed #(
                     end
                 end
             end
-            assign rd_req[r]  = issue;
-            assign rd_buf[r]  = bsel;
-            assign rd_lane[r*XLW +: XLW] = lane;
-            assign rd_addr[r*AW +: AW] = {mt, rr, k[KW-1:XLW]};
+            // next-state copy of the issue (for the registered lane read request): mirrors the update above
+            reg             act_n, bsel_n;
+            reg  [MTW-1:0]  mt_n;
+            reg  [KW-1:0]   k_n;
+            reg  [1:0]      ph_n;
+            always @* begin
+                act_n = act; bsel_n = bsel; mt_n = mt; k_n = k; ph_n = ph;
+                if (!rst_n) begin
+                    act_n = 1'b0; ph_n = 2'd0; k_n = {KW{1'b0}};
+                end else if (tv) begin
+                    act_n = 1'b1; bsel_n = tb; mt_n = tmt; k_n = {KW{1'b0}}; ph_n = 2'd0;
+                end else if (act) begin
+                    if (ph_last) begin ph_n = 2'd0; k_n = k + 1'b1; end
+                    else         ph_n = ph + 1'b1;
+                    if (issue & lastk) act_n = 1'b0;
+                end
+            end
+            /* verilator lint_off UNUSEDSIGNAL */
+            wire [MTW+RW-1:0] rblk_n = {mt_n, rr};
+            /* verilator lint_on UNUSEDSIGNAL */
+            assign rd_req[r]  = act_n & (ph_n == 2'd0);
+            assign rd_buf[r]  = bsel_n;
+            assign rd_lane[r*XLW +: XLW] = k_n[XLW-1:0] + rblk_n[XLW-1:0];
+            assign rd_addr[r*AW +: AW] = {mt_n, rr, k_n[KW-1:XLW]};
             assign row_act[r] = act | cap;
             assign row_buf[r] = act ? bsel : cap_buf;
             // data capture
@@ -166,9 +190,11 @@ module gm_xfeed #(
     generate
         for (b = 0; b < 2; b = b + 1) begin : g_buf
             for (l = 0; l < XL; l = l + 1) begin : g_lane
-                // read request to (b, l): at most one row by construction
+                // read request to (b, l) in the next cycle: at most one row by construction
                 reg           ren;
                 reg [AW-1:0]  raddr;
+                reg           ren_s;
+                reg [AW-1:0]  raddr_s;
                 integer i;
                 always @* begin
                     ren = 1'b0; raddr = {AW{1'b0}};
@@ -196,16 +222,25 @@ module gm_xfeed #(
                             wdata = wdata | wr_data[j*32 +: 32];
                         end
                 end
+                // registered lane requests (P8c): the write one cycle after the beat, the read in its issue cycle
+                reg           wen_s;
+                reg [AW-1:0]  waddr_s;
+                reg [31:0]    wdata_s;
+                always @(posedge clk) begin
+                    if (!rst_n) begin wen_s <= 1'b0; ren_s <= 1'b0; end
+                    else        begin wen_s <= wen;  ren_s <= ren;  end
+                    waddr_s <= waddr; wdata_s <= wdata; raddr_s <= raddr;
+                end
                 wire [31:0] q;
                 mm_sram_bank #(.WORDS(WORDS), .WIDTH(32), .AW(AW)) u_bank (
-                    .clk(clk), .en(wen | ren), .we(wen), .addr(wen ? waddr : raddr),
-                    .d(wdata), .q(q));
+                    .clk(clk), .en(wen_s | ren_s), .we(wen_s), .addr(wen_s ? waddr_s : raddr_s),
+                    .d(wdata_s), .q(q));
                 if (b == 0) begin : g_q0
                     assign q0[l] = q;
                 end else begin : g_q1
                     assign q1[l] = q;
                 end
-                assign conf[b*XL + l] = wen & ren;
+                assign conf[b*XL + l] = wen_s & ren_s;
             end
         end
     endgenerate
