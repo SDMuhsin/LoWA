@@ -32,6 +32,14 @@ echo "ORDER$ORDER variant $V period $P corner $C"
 for b in $ORDER; do
     out=$HR/$b
     if [ -f "$out/design.txt" ] && [ "${FORCE:-0}" != 1 ]; then echo "REUSE $b"; continue; fi
+    # T65_WAIT_IDLE=1 (unit / top runs on a shared server): start a block only when no other synthesis, equivalence,
+    # timing or simulation job of this account is running (this script runs one block at a time itself)
+    if [ "${T65_WAIT_IDLE:-0}" = 1 ]; then
+        w=0
+        while ps -u "$(id -un)" -o args= | grep -qE '^[^ ]*(dc_shell|fm_shell|pt_shell|vcs|simv)'; do
+            [ $w = 0 ] && echo "WAIT_IDLE $b $(date +%H:%M:%S)"; w=1; sleep 300
+        done
+    fi
     echo "START $b $(date +%H:%M:%S)"
     mkdir -p "$out"; rm -f "$out/design.txt" "$out/summary.txt"
     (

@@ -10,3 +10,4 @@ T65_MC_LC_SETUP=<LIBRARY_COMPILER_SETUP_CSH>
 T65_MC_CANDIDATES="<W>:<B>:<COMPILER>:<MUX> ..."
 # chosen macro per bank shape  words:bits:compiler:mux:instance
 T65_MC_SHAPES="256:32:<COMPILER>:<MUX>:<INST256> 512:32:<COMPILER>:<MUX>:<INST512> 768:32:<COMPILER>:<MUX>:<INST768>"
+T65_MC_UD_DEFINE=<VENDOR_UNIT_DELAY_DEFINE>   # define that selects the vendor models' unit-delay mode (sram/sim_banks.sh)
