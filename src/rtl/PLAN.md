@@ -138,3 +138,11 @@ src/rtl/
   clock is that closed period. No further RTL timing rounds in P8. P8d then runs at that clock: top-level
   full16 synthesis, Formality, pre-layout PT (ss/tt/ff) and PP, and the final report with the full-size step
   time recomputed at the new clock.
+- R16 (2026-10-18) P8e, run in parallel with P8d (user approved parallel phases): SRAM-macro variant for the
+  synthesis numbers, alongside the latch-RF design (which stays the buildable baseline). Probe whether the
+  kit's ARM SRAM/RF compilers can produce front-end views (.lib/.db, Verilog model, footprint) despite no
+  GDS/LVS. If yes: a `tsmc65_sram` mm_sram_bank backend (same port contract; macro names only in site files),
+  bank-contract sims with the vendor model on the server, and DC of banks + units with macros as black boxes
+  (area, timing, power). If no: CACTI-style modelled SRAM numbers, labelled as modelled. Isolation: branch
+  `p8e`, server dir ~/lowa_tsmc65/sram, light jobs only while P8d runs big ones; merged to main by the PI after
+  P8d. Kit-derived views stay on the server.
