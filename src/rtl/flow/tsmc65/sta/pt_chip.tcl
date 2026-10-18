@@ -123,7 +123,6 @@ if {$power ne "none"} {
     } else {
         set_app_var power_default_toggle_rate [envd T65_TR 0.1]
         set_app_var power_default_static_probability [envd T65_SP 0.5]
-        set_app_var power_default_toggle_rate_type fastest_clock
         redirect $out/rpt_switching.rpt { report_switching_activity }
     }
     update_power

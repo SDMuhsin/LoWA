@@ -4,3 +4,5 @@ source <TOOL_SETUP_SCRIPT_DC> >& /dev/null
 source <TOOL_SETUP_SCRIPT_PT> >& /dev/null
 source <TOOL_SETUP_SCRIPT_FM> >& /dev/null
 setenv T65_KIT <STDCELL_KIT_ROOT>
+# RTL simulator for the P8d power-activity runs (sim/run_saif.sh sources it on its own)
+setenv T65_VCS_CSH <TOOL_SETUP_SCRIPT_VCS>
