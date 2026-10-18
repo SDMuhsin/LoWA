@@ -225,11 +225,11 @@ syn65u-%:
 
 ## P8d: exit rule, then the chip at the closed clock (flow/tsmc65/run_p8d.sh; one job at a time, log build/tsmc65/p8d.log):
 ##   make syn65-exit                                vu16 at 5.0 (5.25 if it misses), gm16 at the closed period
-##   make p8d65 P8D_PERIOD=5.0 [P8D_STAGES="lwbanks chip fm pt"]   chip DC, Formality, PrimeTime ss/tt/ff + PrimePower
+##   make p8d65 P8D_PERIOD=5.0 [P8D_STAGES="stale chip fm pt"]   chip DC, Formality, PrimeTime ss/tt/ff + PrimePower
 ##   make saif65-gm / saif65-vu P8D_PERIOD=5.0 [SAIF_CYC=20000]      RTL SAIF (VCS) of real_dgelu / real_ln_fwd
 ##   make p8d65 P8D_PERIOD=5.0 P8D_STAGES=ptsaif                  PrimePower of gm16 / vu16 with those SAIFs
 P8D_PERIOD ?= 5.0
-P8D_STAGES ?= lwbanks chip fm pt
+P8D_STAGES ?= stale chip fm pt
 SAIF_CYC ?= 20000
 syn65-exit:
 	$(T65) run 'mkdir -p build/tsmc65; nohup flow/tsmc65/syn/run_exit.sh > build/tsmc65/hier_exit.log 2>&1 < /dev/null & echo launched exit'
