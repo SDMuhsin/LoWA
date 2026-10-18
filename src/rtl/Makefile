@@ -10,7 +10,7 @@ L0   := $(RUNS)/model_fp32.npz $(RUNS)/stepA_l0f32.npz $(RUNS)/stepA_l0f64.npz $
 .PHONY: model-check model-arith model-l0 model-l1 lint gen-check test-fp test-fp-quick test-unit \
         test-gemm test-gemm-quick test-vec test-vec-quick test-lowa test-lowa-quick test-mem test-mem-quick test-rng test-rng-quick synth-mem synth-rng synth-ctrl test-ctrl test-ctrl-quick compile compiler-check synth-fp synth-gemm synth-vec synth-lowa test-e2e test-e2e-full synth pnr clean-model clean \
         test-mem-t65 test-mem-gf180 test-mem-banks syn65-scout syn65-status syn65-results sync65-pull sync65-wip sync65-site sync65-results \
-        syn65u-status syn65u-results syn65u-all
+        syn65u-status syn65u-results syn65u-all syn65-exit p8d65 saif65-gm saif65-vu
 
 ## P1 gate: arithmetic proof, L0 dumps (GPU cuda:0, ~1.5 min, only if missing), L1 steps, L1 vs L0
 model-check: model-arith model-l1
@@ -221,7 +221,27 @@ syn65u-all:
 	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) nohup flow/tsmc65/syn/run_hier.sh $(UNITS) > build/tsmc65/hier_all.log 2>&1 < /dev/null & echo launched all'
 
 syn65u-%:
-	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) T65_FP=$(or $(T65_FP),0) T65_TAG=$(T65_TAG) nohup flow/tsmc65/syn/run_hier.sh $* > build/tsmc65/hier_$*$(T65_TAG).log 2>&1 < /dev/null & echo launched $*$(T65_TAG)'
+	$(T65) run 'mkdir -p build/tsmc65; T65_PERIOD=$(or $(T65_PERIOD),4.0) FORCE=$(or $(FORCE),0) T65_FP=$(or $(T65_FP),0) T65_TAG=$(T65_TAG) T65_KID_TAG=$(T65_KID_TAG) nohup flow/tsmc65/syn/run_hier.sh $* > build/tsmc65/hier_$*$(T65_TAG).log 2>&1 < /dev/null & echo launched $*$(T65_TAG)'
+
+## P8d: exit rule, then the chip at the closed clock (flow/tsmc65/run_p8d.sh; one job at a time, log build/tsmc65/p8d.log):
+##   make syn65-exit                                vu16 at 5.0 (5.25 if it misses), gm16 at the closed period
+##   make p8d65 P8D_PERIOD=5.0 [P8D_STAGES="lwbanks chip fm pt"]   chip DC, Formality, PrimeTime ss/tt/ff + PrimePower
+##   make saif65-gm / saif65-vu P8D_PERIOD=5.0 [SAIF_CYC=20000]      RTL SAIF (VCS) of real_dgelu / real_ln_fwd
+##   make p8d65 P8D_PERIOD=5.0 P8D_STAGES=ptsaif                  PrimePower of gm16 / vu16 with those SAIFs
+P8D_PERIOD ?= 5.0
+P8D_STAGES ?= lwbanks chip fm pt
+SAIF_CYC ?= 20000
+syn65-exit:
+	$(T65) run 'mkdir -p build/tsmc65; nohup flow/tsmc65/syn/run_exit.sh > build/tsmc65/hier_exit.log 2>&1 < /dev/null & echo launched exit'
+
+p8d65:
+	$(T65) run 'mkdir -p build/tsmc65; T65_SAIF_GM=$$PWD/build/tsmc65/saif/gm_real_dgelu/dut.saif T65_SAIF_VU=$$PWD/build/tsmc65/saif/vu_real_ln_fwd/dut.saif nohup flow/tsmc65/run_p8d.sh $(P8D_PERIOD) $(P8D_STAGES) > build/tsmc65/p8d.log 2>&1 < /dev/null & echo launched p8d'
+
+saif65-gm:
+	$(T65) run 'nohup flow/tsmc65/sim/run_saif.sh gm build/tsmc65/vec/gm real_dgelu $(SAIF_CYC) $(P8D_PERIOD) > build/tsmc65/saif_gm.log 2>&1 < /dev/null & echo launched saif gm'
+
+saif65-vu:
+	$(T65) run 'nohup flow/tsmc65/sim/run_saif.sh vu build/tsmc65/vec/vu real_ln_fwd $(SAIF_CYC) $(P8D_PERIOD) > build/tsmc65/saif_vu.log 2>&1 < /dev/null & echo launched saif vu'
 
 synth pnr:
 	@echo "make $@: not implemented yet (see PLAN.md phases P2-P8)"; false

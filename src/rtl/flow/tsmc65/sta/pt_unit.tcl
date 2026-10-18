@@ -50,7 +50,7 @@ if {$useetm} {
 }
 set files {}; set bdesign [dict create]; set bdir [dict create]
 foreach b $blocks {
-    set d [expr {$b eq $top ? "$hroot/$top" : [t65_kid_dir $hroot $b]}]
+    set d [t65_kid_dir $hroot $b]
     set fh [open $d/design.txt]; dict set bdesign $b [string trim [read $fh]]; close $fh
     dict set bdir $b $d
     lappend files $d/$b.v
@@ -131,7 +131,7 @@ if {[envd T65_PT_AREA 0]} {
 if {$power ne "none"} {
     if {$power eq "saif"} {
         foreach {f strip inst} $::env(T65_SAIF) {
-            redirect -append $out/rpt_saif.rpt { read_saif -auto_map_names -strip_path $strip -path $inst $f }
+            if {$inst eq ""} { redirect -append $out/rpt_saif.rpt { read_saif -auto_map_names -strip_path $strip $f } } else { redirect -append $out/rpt_saif.rpt { read_saif -auto_map_names -strip_path $strip -path $inst $f } }
         }
         redirect $out/rpt_switching.rpt { report_switching_activity -list_not_annotated -max_objects 20 }
     } else {
