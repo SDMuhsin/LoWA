@@ -4,6 +4,7 @@
 # has a design.txt (a finished run) is reused, not recompiled (FORCE=1 rebuilds the named blocks themselves, FORCE=all every block in the order).
 # Prints START / DC_DONE per run and HIER_DONE at the end; stops at the first failed block.
 # T65_FP / T65_TAG (floorplan, output suffix; syn/run_unit.sh) apply to the named blocks only, never to their children.
+# T65_KID_TAG (P8d): children taken from tagged runs (common/hier.tcl t65_kid_dir); they and their own children are not visited.
 #   cd <tree>/src/rtl || exit 1; nohup flow/tsmc65/syn/run_hier.sh vec > build/tsmc65/hier_vec.log 2>&1 < /dev/null &
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
@@ -23,6 +24,13 @@ for a in "$@"; do
 done
 echo "ORDER$ORDER"
 for b in $ORDER; do
+    # a child selected by T65_KID_TAG (e.g. gm16=_p5.25) is the run in hier/<child><tag>, never rebuilt here
+    ktag=$(echo "${T65_KID_TAG:-}" | tr ', ' '\n\n' | awk -F= -v b="$b" '$1 == b { print $2 }')
+    case " $NAMED " in *" $b "*) ktag="" ;; esac
+    if [ -n "$ktag" ]; then
+        [ -f "$ROOT/build/tsmc65/hier/$b$ktag/design.txt" ] || { echo "HIER_FAILED $b$ktag (T65_KID_TAG run missing)"; echo "HIER_DONE $(date +%H:%M:%S)"; exit 1; }
+        echo "REUSE $b$ktag"; continue
+    fi
     case " $NAMED " in *" $b "*) tag=${T65_TAG:-}; fp=${T65_FP:-0} ;; *) tag=""; fp=0 ;; esac
     if [ -f "$ROOT/build/tsmc65/hier/$b$tag/design.txt" ] && [ "${FORCE:-0}" != all ]; then
         case " $NAMED " in *" $b "*) [ "${FORCE:-0}" = 1 ] || { echo "REUSE $b"; continue; } ;; *) echo "REUSE $b"; continue ;; esac
