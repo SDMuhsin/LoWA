@@ -39,7 +39,7 @@ if {$params eq ""} { set_top r:/WORK/$mod } else { set_top r:/WORK/$mod -paramet
 set_app_var hdlin_interface_only ""
 # ---- implementation: the DC netlist; abstracted children are not defined in it (black boxes)
 set_app_var hdlin_unresolved_modules [expr {$abs ? "black_box" : "error"}]
-read_verilog -container i -libname WORK -05 -netlist $out/$block.v
+read_verilog -container i -libname WORK -netlist $out/$block.v
 set_top i:/WORK/$design
 
 match
