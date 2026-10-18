@@ -20,13 +20,15 @@ proc t65_mc_dbs {corner} {
 }
 if {!$::T65_SRAM_LATCH} {
     proc t65_defines {} { return {SYNTHESIS MM_TECH=3} }
-    rename t65_hw_files t65_hw_files_latch
-    proc t65_hw_files {} {
-        set out {}
-        foreach f [t65_hw_files_latch] {
-            if {[file tail $f] eq "mm_sram_macro.v"} { lappend out $::T65_SRAM_RTL } else { lappend out $f }
+    if {[info commands t65_hw_files] ne ""} {          ;# DC only (PT reads netlists)
+        rename t65_hw_files t65_hw_files_latch
+        proc t65_hw_files {} {
+            set out {}
+            foreach f [t65_hw_files_latch] {
+                if {[file tail $f] eq "mm_sram_macro.v"} { lappend out $::T65_SRAM_RTL } else { lappend out $f }
+            }
+            return $out
         }
-        return $out
     }
     if {[info commands t65_dc_setup] ne ""} {
         rename t65_dc_setup t65_dc_setup_latch
