@@ -13,3 +13,6 @@
 set_app_var synopsys_auto_setup true
 set_app_var verification_clock_gate_hold_mode any
 set_app_var verification_failing_point_limit 0
+# Run-time cap (T65_FM_TIMEOUT, hh:mm:ss, default none): points left when it expires are reported as aborted /
+# unverified, never as passing.
+if {[info exists ::env(T65_FM_TIMEOUT)]} { set_app_var verification_timeout_limit $::env(T65_FM_TIMEOUT) }
