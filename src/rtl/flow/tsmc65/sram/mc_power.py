@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """P8e: per-macro power numbers from the generated liberty files (summary numbers only, safe to copy off the server).
   python3 flow/tsmc65/sram/mc_power.py <T65_MC_OUT> <corner_name> <period_ns> <inst> ...
-For each macro: leakage (largest leakage_power value of the cell with the retention pin active, i.e. not the
-'!RETN' state), and the clock-pin internal energy of a read and of a write access at margin setting 000 (rise + fall
+For each macro: leakage (per supply pin the largest leakage_power value with the retention pin active, i.e. not
+the '!RETN' state, summed over the supply pins), and the clock-pin internal energy of a read and of a write access at margin setting 000 (rise + fall
 energy of the CLK internal_power group whose condition is chip-enabled read / write; first table value, these tables
 are flat).  Energy unit = voltage_unit x capacitive_load_unit (V x pF = pJ).  Then the P8d vectorless activity
 (static probability 0.5 on the chip and write enables: an access in 50 % of cycles, half reads, half writes)
@@ -28,8 +28,15 @@ def main():
     out, corner, period, insts = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4:]
     for inst in insts:
         t = open(f"{out}/{inst}/{inst}_{corner}_syn.lib").read().replace("\\\n", " ")
-        leak = [float(v) for b in blocks(t, "leakage_power") if "!RETN" not in b
-                for v in re.findall(r"value\s*:\s*([0-9.eE+-]+)", b)]
+        lk = {}                                   # per supply pin: largest value of the active (not '!RETN') states
+        for b in blocks(t, "leakage_power"):
+            if "!RETN" in b:
+                continue
+            pg = re.search(r'related_pg_pin\s*:\s*"?(\w+)', b)
+            for v in re.findall(r"value\s*:\s*([0-9.eE+-]+)", b):
+                k = pg.group(1) if pg else "-"
+                lk[k] = max(lk.get(k, 0.0), float(v))
+        leak = [sum(lk.values())] if lk else []
         clk = next(b for b in blocks(t, "pin") if re.search(r"clock\s*:\s*true", b))
         e = {}
         for b in blocks(clk, "internal_power"):
