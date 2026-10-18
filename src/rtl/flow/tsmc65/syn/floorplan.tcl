@@ -7,13 +7,14 @@
 #   t65_floorplan <block> <out>  creates the die / core, places the ports' side, writes <out>/rpt/floorplan.rpt and
 #                                returns a one-line summary (core width / height, die, ports)
 proc t65_fp_params {block} {
-    set p [dict create area "" util 0.65 aspect 1.0 side b offset 12]
+    set p [dict create area "" util 0.65 aspect 1.0 side b offset 12 full -]
     set fh [open $::T65_FLOW/common/floorplan.txt]
     while {[gets $fh line] >= 0} {
         set line [string trim $line]
         if {$line eq "" || [string index $line 0] eq "#"} continue
-        lassign $line b area util aspect side offset
-        if {$b eq $block} { set p [dict create area $area util $util aspect $aspect side $side offset $offset] }
+        lassign $line b area util aspect side offset full
+        if {$full eq ""} { set full - }
+        if {$b eq $block} { set p [dict create area $area util $util aspect $aspect side $side offset $offset full $full] }
     }
     close $fh
     foreach {k e} {area T65_FP_AREA util T65_FP_UTIL aspect T65_FP_ASPECT side T65_FP_SIDE offset T65_FP_OFFSET} {
@@ -32,7 +33,9 @@ proc t65_floorplan {block out} {
     set cw [expr {ceil($cw)}]; set ch [expr {ceil($ch)}]
     set dw [expr {$cw + 2 * $offset}]; set dh [expr {$ch + 2 * $offset}]
     create_die_area -coordinate [list 0 0 $dw $dh]
-    create_core_area -coordinate [list [list $offset $offset] [list [expr {$offset + $cw}] [expr {$offset + $ch}]]]
+    if {![info exists ::env(T65_FP_NOCORE)] || !$::env(T65_FP_NOCORE)} {
+        create_core_area -coordinate [list [list $offset $offset] [list [expr {$offset + $cw}] [expr {$offset + $ch}]]]
+    }
     set ports [get_ports *]
     set_port_side -side $side $ports
     redirect $out/rpt/floorplan.rpt { report_physical_constraints -no_site_row }

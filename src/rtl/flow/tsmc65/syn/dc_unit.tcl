@@ -36,6 +36,20 @@ set params [t65_hier $block params]
 set kids   [t65_hier $block children]
 set io     [t65_hier $block io]
 set abs    [expr {[t65_hier $block link] eq "abs" && [llength $kids]}]
+# T65_LINK=full: link every child as a full dont_touch netlist even if the table says abs (diagnostic).
+# Children named in T65_LINK_FULL (comma / space list), or, in a floorplanned run, in the block's `full` column of
+# common/floorplan.txt, are linked as full netlists while the others stay block abstractions: DC topographical's
+# placer fails on a floorplanned parent that links the PE / lane abstractions (P8c2 report section 4).
+if {[envd T65_LINK ""] eq "full"} { set abs 0 }
+set full_kids [split [string map {, " "} [envd T65_LINK_FULL ""]]]
+if {[envd T65_FP 0] && [envd T65_TOPO 1]} {
+    source $flow/syn/floorplan.tcl
+    if {![envd T65_FP_NOFULL 0] && ![catch {t65_fp_params $block} fpp] && [dict get $fpp full] ne "-"} {
+        set full_kids [concat $full_kids [split [dict get $fpp full] ,]]
+    }
+}
+set full_kids [lsearch -all -inline -not -exact $full_kids ""]
+if {[llength $full_kids]} { puts "T65_LINK_FULL $full_kids" }
 file mkdir $out/rpt
 set_host_options -max_cores $cores
 t65_dc_setup $corner $topo $out
@@ -66,8 +80,11 @@ puts "T65_DESIGN $design"
 # abstraction is written into every block's .ddc), for parents whose full netlist would not fit in memory.
 proc t65_tokens {n} { lsort [split $n _] }
 set abs_refs {}; set abs_designs {}
+# T65_ABS_MACRO=1 (diagnostic): block abstractions get their block's area, as a macro, for placement
+if {[envd T65_ABS_MACRO 0]} { set_app_var block_abstraction_compute_area_as_macro true; puts "T65_ABS_MACRO 1" }
 set kid_design [dict create]
 foreach k $kids {
+    set kabs [expr {$abs && $k ni $full_kids}]
     set f $hroot/$k/design.txt
     if {![file exists $f]} { puts "T65_ERROR child $k not built ($f)"; exit 1 }
     set fh [open $f]; set kn [string trim [read $fh]]; close $fh
@@ -76,10 +93,10 @@ foreach k $kids {
     # the elaborated <design> to it and drop the elaborated one
     set orig [string range $kn [string length "${k}__"] end]
     if {[t65_hier $k copy] && [string match "${k}__*" $kn] && [sizeof_collection [get_designs -quiet $orig]]} {
-        if {$abs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
+        if {$kabs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
         set before [get_object_name [get_designs]]
         read_ddc $hroot/$k/$k.ddc
-        if {$abs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
+        if {$kabs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
         current_design $design            ;# read_ddc made the child current
         set oc [get_cells -quiet -hierarchical -filter "ref_name==$orig"]
         puts "T65_COPY child $k: [sizeof_collection $oc] instances of $orig -> $kn"
@@ -99,10 +116,10 @@ foreach k $kids {
     }
     dict set kid_design $k $pn
     remove_design $pn
-    if {$abs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
+    if {$kabs} { lappend abs_refs $kn; set_top_implementation_options -block_references $abs_refs }
     set before [get_object_name [get_designs]]
     read_ddc $hroot/$k/$k.ddc
-    if {$abs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
+    if {$kabs} { foreach d [get_object_name [get_designs]] { if {$d ni $before} { lappend abs_designs $d } } }
     if {$pn ne $kn} { rename_design $kn $pn }
 }
 current_design $design
@@ -129,7 +146,6 @@ set_clock_gating_style -sequential_cell latch -positive_edge_logic integrated \
 # ---------------------------------------------------------------- floorplan (P8c2): T65_FP=1, topographical only
 set fp_line ""
 if {[envd T65_FP 0] && $topo} {
-    source $flow/syn/floorplan.tcl
     if {[catch {set fp_line [t65_floorplan $block $out]} e]} { puts "T65_ERROR floorplan: $e"; exit 1 }
 }
 
@@ -157,7 +173,7 @@ if {[t65_hier $block copy]} {
     set design ${block}__$design
     puts "T65_COPY_NAME $design"
 }
-if {!$abs} { dict for {k kn} $kid_design { dict set kid_design $k ${block}__$kn } }
+dict for {k kn} $kid_design { if {!$abs || $k in $full_kids} { dict set kid_design $k ${block}__$kn } }
 current_design $design
 change_names -rules verilog -hierarchy
 set design [get_object_name [current_design]]

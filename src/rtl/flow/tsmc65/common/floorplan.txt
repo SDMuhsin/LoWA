@@ -4,6 +4,9 @@
 # area_um2 is the block's measured area (unit total incl. the abstracted children: their cells are placed in this
 # core); util = the template's placement utilisation (GanAccelAsic src_int8_tsmc65, MQ65_UTIL 0.65), aspect 1 =
 # a square core like the template's (-side_ratio {1 1}), offset 12 um = the template's core offset.
-# block  area_um2    util  aspect  side  offset  source of area_um2
-gm16     11170038    0.65  1.0     b     12      docs/p8c_report.md section 3 (gm16 at 4.0 ns after the P8c repairs)
-vu16     4364134     0.65  1.0     b     12      docs/p8c_report.md section 3 (vu16 at 4.0 ns after the P8c repairs)
+# full = children linked as full dont_touch netlists in the floorplanned run (comma list, - = none); the others stay
+# block abstractions.  DC topographical's placer stops with an internal error (placer sanity check, OPT-1405) when a
+# floorplanned parent links the pe or lane abstractions; the bank-copy abstractions place normally (lw test).
+# block  area_um2    util  aspect  side  offset  full   source of area_um2
+gm16     11170038    0.65  1.0     b     12      pe     docs/p8c_report.md section 3 (gm16 at 4.0 ns after the P8c repairs)
+vu16     4364134     0.65  1.0     b     12      lane   docs/p8c_report.md section 3 (vu16 at 4.0 ns after the P8c repairs)
