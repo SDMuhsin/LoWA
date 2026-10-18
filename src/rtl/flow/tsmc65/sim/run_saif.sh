@@ -24,8 +24,8 @@ tcsh -f -c "source $ROOT/flow/tsmc65/site/site.csh >& /dev/null; source \$T65_VC
   $ROOT/$tb $ROOT/tb/power/saif_ctl.sv -f files.f >& /dev/null; \
   ./simv +desc=$d/$c.desc +mem=$d/$c.mem.hex +exp=dummy.exp.hex $mask +saifcyc=$n -l sim.log >& /dev/null"
 if [ -f dut.saif ]; then
-    ps=$(awk -v p="$p" 'BEGIN { printf "%d", p * 1000 / 40 }')
-    sed -i -E "0,/\(TIMESCALE[^)]*\)/s//(TIMESCALE $ps ps)/" dut.saif
+    fs=$(awk -v p="$p" 'BEGIN { printf "%d", p * 1000000 / 40 }')
+    sed -i -E "0,/\(TIMESCALE[^)]*\)/s//(TIMESCALE $fs fs)/" dut.saif
     grep -m1 TIMESCALE dut.saif
 fi
 echo "SAIF_DONE $u $c vcs_errors $(grep -c '^Error' vcs.log 2>/dev/null) $(grep -m1 SAIF_WRITTEN sim.log 2>/dev/null) saif $([ -f dut.saif ] && du -h dut.saif | cut -f1 || echo none)"
