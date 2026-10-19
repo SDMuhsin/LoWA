@@ -279,7 +279,8 @@ three bank copies; every other block's run postdates its last RTL change (checke
 ## 7. Power (PrimePower, average, tt)
 
 Two methods, both stated per number. PrimePower (pt_shell, `power_analysis_mode averaged`) on the complete unit
-netlists of section 4.2 at tt (1.0 V, 25 C), with the ss RC estimate, ideal clocks, 5.25 ns.
+netlists of section 4.2 at tt (1.0 V, 25 C), with the ss RC estimate and ideal clocks. Table (a) is the unit runs at
+the unit clock, 5.25 ns, with this phase's mm; (a1) is the headline.
 
 **(a) Vectorless, explicit toggle rates.** `power_default_toggle_rate 0.1` (10 % of the clock rate on every
 primary input and black-box output), `power_default_static_probability 0.5`; PrimePower propagates activity
@@ -309,8 +310,7 @@ rates; every unit input is driven by the propagated activity of the unit that pr
 | u_seq / u_axil | 0.0001 | 0.0010 | 0.0003 | 0.0015 |
 | **chip** | **0.0484** | **0.3453** | **0.0814** | **0.475** (clock network 0.307, 65 %) |
 
-**(a2) The same at 7.75 ns (129.0 MHz), without the mm fix.** Here only the chip's own ports get the
-default rates; every unit input is driven by the propagated activity of the unit that produces it.
+**(a2) The same at 7.75 ns (129.0 MHz), without the mm fix.**
 
 | flat chip, tt, 7.75 ns, vectorless | switching W | internal W | leakage W | total W |
 |---|---|---|---|---|
@@ -418,7 +418,11 @@ Per the PI, the headline clock of both variants is 5.5 ns. The macro variant's c
   bank, and the VCS power runs of section 7 (which simulate it, but do not check results).
 - **mm Formality is INCONCLUSIVE**, not a pass: no failing point in any run, but unverified points remain at the 3 h
   cap (flat) and in the top-level glue (hierarchical); see section 5.
-- Units that closed 4.0 ns were not re-synthesised at 5.25 ns (area / power slightly above a 5.25 ns synthesis).
+- Units that closed 4.0 ns (and gm16 / vu16 / mm at 5.25 ns) were not re-synthesised at the 5.5 ns chip clock, so
+  area and power are slightly above what a 5.5 ns synthesis would give.
+- The margin at 5.5 ns is small: the worst flop endpoint has +0.131 ns (seq > vu, accepted by the PI), before
+  placement-driven wire changes.
+- The SRAM-macro variant (P8e) has no flat-chip PrimeTime run of its own.
 
 ## 11. Reproduction
 
@@ -435,18 +439,33 @@ make p8d65 P8D_PERIOD=5.25 P8D_STAGES=ptsaif               # PrimePower of gm16 
 make sync65-results                   # summaries -> flow/tsmc65/results/ (git-ignored)
 ```
 
-Chip-level runs (after `p8d65`), on the server in `src/rtl`:
+Chip-level runs (after `p8d65`), on the server in `src/rtl`. The mm / rng9 / rng3 used at 5.5 ns are P8f's 5.25 ns
+runs. This phase copied them from P8f's clone as `hier/{mm,rng9,rng3}_p8f`. On main, which now carries P8f's RTL,
+they are rebuilt as the first three lines below:
 
 ```
-export T65_KID_TAG=gm16=_p5.25,vu16=_p5.25 T65_PERIOD=5.25
-FORCE=1 flow/tsmc65/syn/run_hier.sh chip                                # chip DC
-flow/tsmc65/lec/run_fm.sh chip                                          # chip Formality
-T65_FM_FULL_KIDS=rng9,rng3 T65_FM_TAG=_full T65_FM_TIMEOUT=05:00:00 flow/tsmc65/lec/run_fm.sh mm
-T65_PT_SUFFIX=_flat T65_PT_AREA=1 flow/tsmc65/sta/run_pt_unit.sh chip ss  # flat chip PrimeTime (also tt vectorless, ff)
+T65_PERIOD=5.25 T65_TAG=_p8f FORCE=1 flow/tsmc65/syn/run_hier.sh rng9
+T65_PERIOD=5.25 T65_TAG=_p8f FORCE=1 flow/tsmc65/syn/run_hier.sh rng3
+T65_PERIOD=5.25 T65_TAG=_p8f FORCE=1 T65_KID_TAG=rng9=_p8f,rng3=_p8f flow/tsmc65/syn/run_hier.sh mm
+export T65_KID_TAG=gm16=_p5.25,vu16=_p5.25,mm=_p8f,rng9=_p8f,rng3=_p8f T65_PT_TOP_SPEF=0
+T65_PERIOD=5.25 FORCE=1 flow/tsmc65/syn/run_hier.sh chip               # chip DC (interconnect only, 4.1)
+flow/tsmc65/lec/run_fm.sh chip rng9:_p8f rng3:_p8f                      # Formality
+T65_FM_FULL_KIDS=rng9,rng3 T65_FM_TIMEOUT=03:00:00 flow/tsmc65/lec/run_fm.sh mm:_p8f
+T65_FM_FULL_KIDS=rng9,rng3 T65_FM_TAG=_hier T65_FM_HIER=1 T65_FM_TIMEOUT=00:20:00 flow/tsmc65/lec/run_fm.sh mm:_p8f
+export T65_PERIOD=5.5 T65_PT_SUFFIX=_flat_p5.5                          # flat chip PrimeTime / PrimePower
+T65_PT_AREA=1 T65_XPATHS=20000 T65_XSLACK=0.5 flow/tsmc65/sta/run_pt_unit.sh chip ss
+flow/tsmc65/sta/run_pt_unit.sh chip tt vectorless
+flow/tsmc65/sta/run_pt_unit.sh chip ff
+make saif65-gm saif65-vu P8D_PERIOD=5.5 SAIF_CYC=200000                 # (local) RTL SAIF, rescaled to 5.5 ns
+T65_PT_SUFFIX=_rtlsaif_p5.5 T65_SAIF="$PWD/build/tsmc65/saif/gm_real_dgelu/dut_g.saif tb_gm_top/dut {}" \
+    flow/tsmc65/sta/run_pt_unit.sh gm16 tt saif                         # likewise vu16 with vu_real_ln_fwd / tb_vu_top
 ```
+
+The "without the mm fix" rows are the same commands with `mm=,rng9=,rng3=` untagged (this phase's mm, rebuilt by
+`p8d65`'s stale stage) and `T65_PERIOD=7.75`.
 
 Files: `flow/tsmc65/run_p8d.sh`, `syn/run_exit.sh`, `lec/{fm_setup,fm_unit}.tcl`, `lec/run_fm.sh`,
-`sta/{pt_unit.tcl,run_pt_unit.sh}`, `sim/run_saif.sh`, `tb/power/saif_ctl.sv`; summaries
+`sta/{pt_unit.tcl,run_pt_unit.sh}`, `sim/{run_saif.sh,saif_scale.py}`, `tb/power/saif_ctl.sv`; summaries
 `build/tsmc65/summary/{hier,fm,ptu}_*.txt` on the server.
 
 Commits: __COMMITS__
