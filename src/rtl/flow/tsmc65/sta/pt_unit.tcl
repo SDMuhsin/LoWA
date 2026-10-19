@@ -195,7 +195,7 @@ if {$power ne "none"} {
             if {$inst eq ""} { set rc [catch {redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip $f }}] } else { set rc [catch {redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip -path $inst $f }}] }
             puts $fh "saif_read [file tail $f] redirect_error $rc"
         }
-        redirect $out/rpt_switching.rpt { report_switching_activity -list_not_annotated -max_objects 20 }
+        catch { redirect $out/rpt_switching.rpt { report_switching_activity } }
     } else {
         set_app_var power_default_toggle_rate [envd T65_TR 0.1]
         set_app_var power_default_static_probability [envd T65_SP 0.5]
