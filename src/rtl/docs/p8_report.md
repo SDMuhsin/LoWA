@@ -114,7 +114,29 @@ that is a flop or output (latch-RF endpoints borrow and sit at 0).
   They are within DC-vs-PT correlation and far below what placement will change; they are reported as misses.
 - Hold at ss and tt: no violators in any unit.
 
-Chip (flat, all 17 netlists): __CHIPPT__
+Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
+
+| chip, flat (5,211,998 cells, 356 SPEF reads) | setup WNS / TNS (ns) [endpoints] | flop WNS | hold WNS [endpoints] |
+|---|---|---|---|
+| ss, 5.25 ns | **-2.272 / -569.9 [476]** | -2.272 | +0.050 [0] |
+| tt, 5.25 ns | __CHIPTT__ |
+| ff, 5.25 ns | __CHIPFF__ |
+| ss, 7.75 ns (check of the chip-level period) | __CHIP775__ |
+
+Worst setup endpoint per unit (ss, 5.25 ns): u_gm -2.272 [11], u_mm -1.748 [41], u_lw -1.666 [419], u_vu -0.119
+[5], u_seq +1.205, u_axil +3.507. Every unit closes 5.25 ns in its own complete-netlist run (table above), so
+these are **paths that cross units**. The worst one starts and ends in gm_top's epilogue (`u_ep/as_rp_ohr_reg ->
+u_ep/asm_cred_reg`, arrival 7.23 ns): gm's write address/data mux drives `wr_addr` out of gm_top (3.85 ns in
+gm's own run), mm_top's write port computes `wr_ready` from it combinationally (`mm_wrport`: `wr_ready = !blk &&
+...`, with the read/write overlap block), and gm takes `wr_ready` back into `wr_pop -> asm_cred` in the same
+cycle. The unit runs could not see this: each side of the boundary was given 20 % of the period as IO budget on
+the assumption of registered unit outputs (docs/rtl_conventions.md), and mm_top's ready outputs are not
+registered (mm's own run shows the input-to-output paths `rd_req_len -> rd_req_ready`, `... -> wr_ready`). lw
+(merge / AdamW channels) and vu (loader / writer channels) talk to mm the same way.
+
+So with the present RTL the chip-level period at ss, pre-layout, is about **5.25 + 2.27 = 7.52 ns**, i.e.
+7.75 ns on the 0.25 ns grid (129 MHz), unless the ready handshakes between the engines and mm_top are
+registered (an RTL change, not allowed in P8d; it needs PI sign-off). __CHIPDECISION__
 
 ### 4.3 Hold
 
