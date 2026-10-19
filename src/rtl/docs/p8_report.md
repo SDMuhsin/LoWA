@@ -138,6 +138,24 @@ the assumption of registered unit outputs (docs/rtl_conventions.md), and mm_top'
 registered (mm's own run shows the input-to-output paths `rd_req_len -> rd_req_ready`, `... -> wr_ready`). lw
 (merge / AdamW channels) and vu (loader / writer channels) talk to mm the same way.
 
+**Cross-unit paths (for P8f).** Flat chip at 7.75 ns, ss: every path into a flop or output with slack below 2.5 ns
+(arrival above ~5.0 ns, i.e. the paths that fail or nearly fail at 5.25 ns), grouped by the sequence of units
+it crosses (20,000-path search, T65_XPATHS):
+
+| units crossed | endpoints | worst slack at 7.75 ns | arrival ns | worst path | via mm |
+|---|---|---|---|---|---|
+| gm > mm > gm | 8 | +0.229 | 7.227 | `u_gm/u_ep/as_rp_ohr_reg -> u_gm/u_ep/asm_cred_reg` (gm 3.98, mm 2.16, gm 1.09) | yes |
+| gm > mm | 5 | +0.752 | 6.733 | `u_gm/u_ep/as_rp_ohr_reg -> u_mm/g_wr_0__u_wr/a_i_reg` | yes |
+| lw > mm > lw | 395 | +0.834 | 6.625 | `u_lw/cur_reg -> u_lw/u_ad/wr_data_reg` | yes |
+| vu > mm | 12 | +1.883 | 5.603 | `u_vu/u_ld/bs_mine_reg -> u_mm/g_rd_2__u_rd/u_mf/count_reg` | yes |
+| lw > mm | 3 | +2.222 | 5.296 | `u_lw/cur_reg -> u_mm/g_wr_2__u_wr/a_i_reg` | yes |
+| **seq > vu** | 3 | +2.381 | 5.116 | `u_seq/vu_p_reg -> u_vu/u_ld/rd1_req_addr_reg` | **no** |
+
+The only group that does not pass through mm is **seq > vu** (sequencer descriptor register into vu_loader's
+read-address register, 5.12 ns arrival): it has no combinational feedthrough, but seq's output stage plus vu's
+input logic exceed the 20 % / 80 % split the unit runs assumed. At 5.25 ns it would miss by about 0.12 ns. No other
+pair of units (gm-vu, gm-lw, seq-gm, seq-lw, seq-mm, axil) has a path with arrival above 5.0 ns.
+
 So with the present RTL the chip-level period at ss, pre-layout, is about **5.25 + 2.27 = 7.52 ns**, i.e.
 7.75 ns on the 0.25 ns grid (129 MHz), unless the ready handshakes between the engines and mm_top are
 registered (an RTL change, not allowed in P8d; it needs PI sign-off). __CHIPDECISION__
