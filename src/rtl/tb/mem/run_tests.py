@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """make test-mem (P6a): memory-system unit tests (tb_mm_unit vs tb_dram, goldens from the python reference in gen_mm.py on a
 memory_map-placed image) and integration (gm_top / vu_top / lw_top on mm_top + tb_dram, goldens from L1 via the P3-P5
-generators, re-placed by gen_integ.py).  run_tests.py [--quick] [--tech generic|gf180|tsmc65]
+generators, re-placed by gen_integ.py).  run_tests.py [--quick] [--tech generic|gf180|tsmc65|tsmc65_sram]
 --tech picks the mm_sram_bank backend (PLAN R11a; default generic): tsmc65 runs the latch register file with the behavioural
 clock gate hw/mem/tech/mm_icg.v.  Summary: build/test-mem[-<tech>]/summary.txt, exit 1 on any FAIL."""
 import argparse
@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 PY = sys.executable
 OUT = os.path.join(ROOT, "build", "test-mem")
-TECHS = {"generic": 0, "gf180": 1, "tsmc65": 2}
+TECHS = {"generic": 0, "gf180": 1, "tsmc65": 2, "tsmc65_sram": 3}
 TECHDEF = ""                                                                 # +define+MM_TECH=<n> for a non-default backend
 HW = " ".join(os.path.relpath(f, ROOT) for f in sorted(glob.glob(os.path.join(ROOT, "hw", "**", "*.v"), recursive=True)))
 UNIT = ["burst", "pattern", "write", "order", "outst"]

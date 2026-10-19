@@ -9,6 +9,8 @@
 //   1 gf180   : GF180 sram256x8 macro tiles (mm_bank_gf180), the default when SYNTHESIS is defined
 //               (the Yosys/OpenROAD GF180 flow in flow/synth, flow/sta)
 //   2 tsmc65  : latch register file with clock-gated word writes (mm_bank_t65, flow/tsmc65)
+//   3 tsmc65_sram : one compiled SRAM / RF macro per bank plus a q-hold adapter (mm_bank_t65s, PLAN R16;
+//               the macro is the stand-in hw/mem/tech/mm_sram_macro.v unless a site wrapper replaces it)
 // Select globally with +define+MM_TECH=<n> (simulators) or -define {MM_TECH=<n>} (DC).
 `ifndef MM_TECH
 `ifdef SYNTHESIS
@@ -21,7 +23,7 @@ module mm_sram_bank #(
     parameter WORDS = 256,
     parameter WIDTH = 32,
     parameter AW    = 8,                    // address width, 2**AW >= WORDS
-    parameter TECH  = `MM_TECH              // 0 generic, 1 gf180, 2 tsmc65
+    parameter TECH  = `MM_TECH              // 0 generic, 1 gf180, 2 tsmc65, 3 tsmc65_sram
 ) (
     input  wire             clk,
     input  wire             en,             // access this cycle
@@ -36,6 +38,9 @@ module mm_sram_bank #(
                 .clk(clk), .en(en), .we(we), .addr(addr), .d(d), .q(q));
         end else if (TECH == 2) begin : g_t65
             mm_bank_t65 #(.WORDS(WORDS), .WIDTH(WIDTH), .AW(AW)) u_bank (
+                .clk(clk), .en(en), .we(we), .addr(addr), .d(d), .q(q));
+        end else if (TECH == 3) begin : g_t65s
+            mm_bank_t65s #(.WORDS(WORDS), .WIDTH(WIDTH), .AW(AW)) u_bank (
                 .clk(clk), .en(en), .we(we), .addr(addr), .d(d), .q(q));
         end else begin : g_gen
             mm_bank_generic #(.WORDS(WORDS), .WIDTH(WIDTH), .AW(AW)) u_bank (

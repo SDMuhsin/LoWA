@@ -29,7 +29,7 @@ for c in "16 9 3" "16 3 3" "16 1 1" "4 3 3" "2 1 14"; do set -- $c; vl rn_mkgen 
 for s in 1 2 7 14; do vl rn_tf -GSTAGES=$s; done
 vl mm_sram_bank -GWORDS=512 -GAW=9; vl mm_sram_bank -GWORDS=1024 -GAW=10
 # memory technology backends (PLAN R11a): every backend through the wrapper, and units built on the tsmc65 one
-for t in 0 1 2; do vl mm_sram_bank -GTECH=$t -GWORDS=768 -GAW=10; vl mm_sram_bank -GTECH=$t -GWORDS=300 -GWIDTH=24 -GAW=9; done
+for t in 0 1 2 3; do vl mm_sram_bank -GTECH=$t -GWORDS=768 -GAW=10; vl mm_sram_bank -GTECH=$t -GWORDS=300 -GWIDTH=24 -GAW=9; done
 vl lw_sg -DMM_TECH=2; vl gm_top -GROWS=4 -GCOLS=4 -GNSFU=2 -DMM_TECH=2
 for s in 1 2 3 4 5 6; do vl fp_fma -GSTAGES=$s; vl fp_add -GSTAGES=$s; done
 for s in 1 2 3; do vl fp_mul -GSTAGES=$s; vl fp_i2f -GSTAGES=$s; vl fp_cmp -GSTAGES=$s; done
