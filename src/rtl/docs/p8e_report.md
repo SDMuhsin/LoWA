@@ -25,7 +25,8 @@ site files.  This report names the compilers generically: **RF** is the single-p
 
 No P8d file was edited.  The DC and PT wrappers check that the scripts they evaluate still have the expected shape
 (five / three `source` lines, one final `exit`) and stop otherwise.  Clock: **5.25 ns at ss 0.9 V 125 C**, the
-chip clock P8d settled under the R15 exit rule (its batch runs `run_p8d.sh 5.25`; `docs/p8_report.md` was not yet on
+unit clock P8d settled under the R15 exit rule (P8d's final report later set the chip-level clock to 7.75 ns, R17,
+because of cross-unit paths through mm_top; the PI kept P8e at 5.25 ns) (its batch runs `run_p8d.sh 5.25`; `docs/p8_report.md` was not yet on
 main).  The banks were first run at the provisional 5.0 ns and then rerun at 5.25 ns.  The 5.0 ns numbers are in
 section 5.1.
 
@@ -187,23 +188,26 @@ pre-layout hold violations (456 endpoints, worst -0.09 ns, total -10.8 ns).  The
 macros' input hold requirements at the ff corner.  Pre-layout hold is left to layout in both variants, as in P8d.
 
 
-### 6.2 Chip top
+### 6.2 Chip top (DC, 5.25 ns, ss)
 
-The macro-variant chip DC (top_chip linking gm16 / vu16 / lw / mm / seq / axil as abstractions; mm, seq, axil, rng
-were rebuilt in this tree at 5.25 ns) was started at 22:22 and stopped at 22:40 by PID.  It had reached 11 GB and
-was still growing, and with P8d's jobs on the box the total went over the PI's 22 GB cap.  It is queued again
-behind a memory gate (14 GB need).  **Labelled estimate** until it runs: mm, seq and axil hold no banks, so the chip
-differs from the latch chip by the unit deltas:
+The macro-variant top_chip DC links gm16 / vu16 / lw / mm / seq / axil as block abstractions.  mm, seq, axil and
+the rng blocks were rebuilt in this tree at 5.25 ns; P8d's are 4.0 ns runs.  It finished at 22:41 (19 min,
+11.6 GB peak).  I stopped it by PID at 22:40, during the wrapper's extra power step after the netlist / .ddc /
+summary were written, because the box total had passed the 22 GB cap.  So the chip has no DC power line; chip power
+below is the sum of the units' PrimePower runs.
 
-| unit | latch RF mm2 | macro mm2 | delta mm2 |
+| | latch RF (P8d, p8_report.md) | SRAM macros (this phase) | macro / latch |
 |---|---|---|---|
-| lw | 1.281 | 0.771 | -0.510 |
-| vu16 | 4.236 | 2.691 | -1.545 |
-| gm16 | 11.167 | 6.661 | -4.506 |
-| **chip (estimate)** | P8d chip | P8d chip - 6.56 | **-6.56** |
+| chip cell area mm2 | 18.046 | **11.341** | 0.63 (-6.71 mm2) |
+| of which on-chip memory mm2 | 8.891 | 2.681 (2.643 macros + 0.038 adapters) | 0.30 |
+| chip setup at 5.25 ns, ss | -2.272 ns, TNS -570, 476 endpoints (PT, flat) | -2.652 ns, TNS -488, 830 endpoints (DC) | |
+| worst chip paths | cross-unit through mm_top's combinational ready outputs | the same class: lw <-> mm (`u_lw/u_ad` from `u_mm`), gm16 epilogue -> mm write channel | |
+| chip clock that closes | 7.75 ns (R17) | not run; same limiter, expected to need R17's mm handshake fix as well | |
+| power, PP tt vectorless, sum of units, mW | 558.6 (leakage 82.0) | **486.6 (leakage 48.8)** | 0.87 (leakage 0.60) |
 
-The bank-level roll-up of section 6 gives -6.18 mm2 for memory alone; the rest is the units' slightly smaller
-logic (gm16's latch children are 4.0 ns runs).
+Unit sums: gm16 + vu16 + lw from section 6.1, plus mm 53.5 / seq 1.56 / axil 0.01 mW (P8d's runs, identical logic
+in both variants).  The pre-layout chip hold picture (DC: -0.127 ns, the 100,000-endpoint report cap) is not
+comparable with P8d's PT hold (+0.050 ns).  DC times hold before any hold fixing; P8d's number is from PrimeTime.
 
 ## 7. Limitations
 
