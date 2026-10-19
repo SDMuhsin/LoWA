@@ -122,10 +122,9 @@ Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
 | chip, flat (5,211,998 cells, 356 SPEF reads) | setup WNS / TNS (ns) [endpoints] | flop WNS | hold WNS [endpoints] |
 |---|---|---|---|
 | ss, 5.25 ns | **-2.272 / -569.9 [476]** | -2.272 | +0.050 [0] |
-| tt, 5.25 ns | __CHIPTT__ |
-| ff, 5.25 ns | __CHIPFF__ |
+| tt / ff, 5.25 ns | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
 | **ss, 7.75 ns (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
-| tt, 7.75 ns | __CHIPTT775__ |
+| tt, 7.75 ns | 0 / 0 [0] | +3.076 | +0.016 [0] |
 | ff, 7.75 ns | __CHIPFF775__ |
 
 Worst setup endpoint per unit (ss, 5.25 ns): u_gm -2.272 [11], u_mm -1.748 [41], u_lw -1.666 [419], u_vu -0.119
@@ -237,6 +236,18 @@ bank per cycle at most), so (a) is an upper-side estimate for the RF clock power
 | seq | 0.0001 | 0.0011 | 0.0003 | 0.0016 | |
 | axil | 0.0000 | 0.0000 | 0.0000 | 0.0000 | |
 | **chip (sum of units; top_chip has no cells)** | **0.0907** | **0.3860** | **0.0820** | **0.559** | |
+
+**(a2) The same, on the flat chip at the chip clock (7.75 ns, 129.0 MHz).** Here only the chip's own ports get the
+default rates; every unit input is driven by the propagated activity of the unit that produces it.
+
+| flat chip, tt, 7.75 ns, vectorless | switching W | internal W | leakage W | total W |
+|---|---|---|---|---|
+| u_gm | 0.0245 | 0.179 | 0.0506 | **0.254** (70 %) |
+| u_vu | 0.0059 | 0.0417 | 0.0189 | **0.0665** |
+| u_lw | 0.0029 | 0.0149 | 0.0057 | **0.0236** |
+| u_mm | 0.0010 | 0.0086 | 0.0061 | **0.0157** |
+| u_seq / u_axil | 0.0001 | 0.0007 | 0.0003 | 0.0011 |
+| **chip** | **0.0345** | **0.2447** | **0.0816** | **0.361** (clock network 0.218) |
 
 **(b) RTL SAIF from VCS (real workload, bounded).** __SAIFSECTION__
 
