@@ -124,9 +124,12 @@ Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
 |---|---|---|---|
 | ss, 5.25 ns | **-2.272 / -569.9 [476]** | -2.272 | +0.050 [0] |
 | tt / ff, 5.25 ns | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
-| **ss, 7.75 ns (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
-| tt, 7.75 ns | 0 / 0 [0] | +3.076 | +0.016 [0] |
-| ff, 7.75 ns | 0 / 0 [0] | +3.436 | -0.0053 / -6.47 [6,012] (**pre-CTS, informative; fixed by hold buffering in P&R**, 4.3) |
+| **ss, 5.5 ns, with P8f mm (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.131** (seq > vu) | +0.050 [0] |
+| **tt, 5.5 ns, with P8f mm** | 0 / 0 [0] | +1.026 | +0.016 [0] |
+| **ff, 5.5 ns, with P8f mm** | __CHIPFF55__ |
+| ss, 7.75 ns, without the mm fix | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
+| tt, 7.75 ns, without the mm fix | 0 / 0 [0] | +3.076 | +0.016 [0] |
+| ff, 7.75 ns, without the mm fix | 0 / 0 [0] | +3.436 | -0.0053 / -6.47 [6,012] (**pre-CTS, informative; fixed by hold buffering in P&R**, 4.3) |
 
 Worst setup endpoint per unit (ss, 5.25 ns): u_gm -2.272 [11], u_mm -1.748 [41], u_lw -1.666 [419], u_vu -0.119
 [5], u_seq +1.205, u_axil +3.507. Every unit closes 5.25 ns in its own complete-netlist run (table above), so
@@ -272,7 +275,19 @@ bank per cycle at most), so (a) is an upper-side estimate for the RF clock power
 | axil | 0.0000 | 0.0000 | 0.0000 | 0.0000 | |
 | **chip (sum of units; top_chip has no cells)** | **0.0907** | **0.3860** | **0.0820** | **0.559** | |
 
-**(a2) The same, on the flat chip at the chip clock (7.75 ns, 129.0 MHz).** Here only the chip's own ports get the
+**(a1) Flat chip at the chip clock, 5.5 ns (181.8 MHz), with P8f's mm.** Only the chip's own ports get the default
+rates; every unit input is driven by the propagated activity of the unit that produces it.
+
+| flat chip, tt, 5.5 ns, vectorless | switching W | internal W | leakage W | total W |
+|---|---|---|---|---|
+| u_gm | 0.0346 | 0.252 | 0.0506 | **0.337** (71 %) |
+| u_vu | 0.0084 | 0.0588 | 0.0189 | **0.0860** |
+| u_lw | 0.0041 | 0.0210 | 0.0057 | **0.0309** |
+| u_mm (P8f) | 0.0012 | 0.0126 | 0.0059 | **0.0197** |
+| u_seq / u_axil | 0.0001 | 0.0010 | 0.0003 | 0.0015 |
+| **chip** | **0.0484** | **0.3453** | **0.0814** | **0.475** (clock network 0.307, 65 %) |
+
+**(a2) The same at 7.75 ns (129.0 MHz), without the mm fix.** Here only the chip's own ports get the
 default rates; every unit input is driven by the propagated activity of the unit that produces it.
 
 | flat chip, tt, 7.75 ns, vectorless | switching W | internal W | leakage W | total W |
