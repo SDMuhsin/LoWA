@@ -165,6 +165,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "e2e"))
     ap.add_argument("--insitu1", required=True, help="in-situ 1-layer run (any shape) for the inter-op gaps")
     ap.add_argument("--insitu2", required=True, help="in-situ 2-layer run (any shape) for the inter-op gaps")
+    ap.add_argument("--tail12", default=None, help="in-situ 12-layer run (any shape): the tail grows with the module "
+                    "count (GNORM rows, coefficient AdamW), not with B / L; tail(12) - tail(1) is added")
     ap.add_argument("--json", default=None)
     a = ap.parse_args()
     g1, g2 = gaps(a.insitu1), gaps(a.insitu2)
@@ -199,7 +201,14 @@ def main():
     l1, body = res["l1"]["total"], res["body"]["total"]
     if l1 and body and "F0" in res:
         per_layer = res["F0"] + body
-        res["step12"] = l1 + 11 * per_layer
+        dtail = 0
+        if a.tail12:
+            o1, s1, _ = SG.segments(a.insitu1, 1, nb0=TAIL_FIRST - B0_FIRST)
+            o12, s12, _ = SG.segments(a.tail12, 1)
+            dtail = s12["tail"][1] - s1["tail"][1]
+            print(f"TAIL in situ: 1 layer {s1['tail'][1]:,d}, 12 layers {s12['tail'][1]:,d}: +{dtail:,d} for 11 layers")
+        res["dtail"] = dtail
+        res["step12"] = l1 + 11 * per_layer + dtail
         sys.path.insert(0, os.path.join(ROOT, "docs", "calc"))
         import budget as BU
         cfg = BU.cfg_list()[0]
@@ -213,7 +222,7 @@ def main():
         print(f"MEASURED 1-layer step {l1:,d}  budget.py (no CLS pruning) {bud[1]:,.0f}  delta {l1 / bud[1] - 1:+.2%}")
         print(f"MEASURED per-layer increment (forward body F0 {res['F0']:,d} + backward body {body:,d}) {per_layer:,d}  "
               f"budget.py {bud[2] - bud[1]:,.0f}  delta {per_layer / (bud[2] - bud[1]) - 1:+.2%}")
-        print(f"COMPOSED 12-layer step = 1-layer + 11 x per-layer = {res['step12']:,d}  budget.py no pruning {bud[12]:,.0f} "
+        print(f"COMPOSED 12-layer step = 1-layer + 11 x per-layer + tail growth = {res['step12']:,d}  budget.py no pruning {bud[12]:,.0f} "
               f"({res['step12'] / bud[12] - 1:+.2%}); budget.py CLS-pruned (paper) {pruned:,.0f} ({res['step12'] / pruned - 1:+.2%})")
         for mhz in (181.818,):
             print(f"STEP TIME at {mhz} MHz: {res['step12'] / mhz / 1e6:.2f} s")

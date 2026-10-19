@@ -22,7 +22,14 @@
 - Speed per single-thread sim under the current load: ~1.2-1.5 k cycles/s; the longest chunk is ~42 M cycles, so ETA
   for the full-size numbers ~06:00-08:00 UTC (freeze 12:00).
 
-## 2026-10-19 21:45 UTC
+## 2026-10-19 22:35 UTC
+- In-situ 2-layer reduced run on current RTL (B 2, L 32): E2E PASS (ALLWRITES + 24/24 bit-exact), 15,020,725 cycles.
+  Its forward body F1 = 2,108,967 (composed from the 1-layer chunks: 2,108,967, equal); backward body B1 = 2,545,138
+  (composed from the isolated body chunks: 2,545,141, +3). Tail grows by 7,174 cycles per layer.
+  1-layer composition + F + B + tail growth = 15,020,543 vs 15,020,725 measured (-182, -0.001 %).
+- Full-size chunks: 2.5-8 h to go.
+
+## 2026-10-19 21:35 UTC
 - Reduced (B 2, L 32) chunks all done. Composed 1-layer step 10,359,261 cycles vs 10,359,455 in situ (pre-P8f log):
   -194 (-0.002 %, the size of the P8f change). Shared ops simulated at the end of one chunk and the start of the next:
   equal or +2 cycles (5 boundaries).
