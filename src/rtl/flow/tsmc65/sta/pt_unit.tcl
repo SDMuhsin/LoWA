@@ -121,6 +121,7 @@ foreach_in_collection u $units {
     set nh [sizeof_collection [get_timing_paths -delay_type min -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -to $e]]
     puts $fh [format "unit %s ref %s endpoints %d setup_wns %s setup_nviol %d hold_wns %s hold_nviol %d" $un \
         [get_attribute $u ref_name] [sizeof_collection $e] [t65_n [get_attribute $ps slack]] $nv [t65_n [get_attribute $ph slack]] $nh]
+    if {[sizeof_collection $ps]} { puts $fh "unit_path $un [t65_path_line $ps] |[t65_path_top $ps]" }
 }
 set e [filter_collection $regd "full_name!~*/*"]
 if {[sizeof_collection $e]} {

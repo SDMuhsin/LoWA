@@ -52,7 +52,43 @@ channel 2 x 294 payload bits + 2 x 2·(NR+NW) counter bits. At full16 (NR 8, NW 
 
 ## 3. Regressions (bit-exact vs L1, nothing weakened)
 
-__REGR__
+All pass, run fastest first in the p8f worktree. Baselines are the same targets run on origin/main (fc109fe) in a
+detached worktree on the same machine. No testbench, vector or check was changed.
+
+| Target | Result | Cycles vs main |
+|---|---|---|
+| make lint | LINT PASS: 56 files / 56 modules; Verilator -Wall 142 runs, Yosys 56, Icarus 56 | - |
+| test-mem-banks | PASS (3 backends x Icarus / Verilator) | - (no mm_top) |
+| test-ctrl | PASS 6/6 | identical (ct_seq on its own, no mm_top) |
+| test-rng | PASS | identical (5 cycle figures; rn_mkgen ready is the same value in every cycle) |
+| test-mem | PASS 47/47 (mm_unit: 5 cases x 3 widths x nominal / stress, incl. `order`; integration gm / gmg / vu / lw on mm_top) | table below |
+| test-e2e (reduced: 1 layer, B 2, L 32, 2 steps) | PASS: every written word (3,389,288 per step) and the results bit-exact vs the interpreter; loss 0.58404243 | step 1 10,358,917, step 2 10,359,084 cycles (__E2EBASE__) |
+
+Same-cycle read / write overlap check (tb/mem/mm_ovl_chk.svh): test-mem integration 14 runs, 721,776 pairs, 0 range overlaps,
+0 word overlaps; e2e 323,892 pairs, 0 / 0.
+
+test-mem integration cycles (DRAM knobs as in tb/mem/run_tests.py):
+
+| case | DRAM | main | P8f | delta |
+|---|---|---|---|---|
+| gm ep_bias_drop_resid | nominal | 6,351 | 6,353 | +2 (+0.03 %) |
+| gm + rn_mkgen ep_bias_drop_resid | nominal | 6,351 | 6,352 | +1 |
+| vu elem | nominal | 37,510 | 37,486 | -24 (-0.06 %) |
+| vu emb | nominal | 115,935 | 115,913 | -22 |
+| lw adamw_real_head | nominal | 5,329,371 | 5,329,371 | 0 |
+| gm real_ffn1_256 | nominal | 2,576,252 | 2,576,252 | 0 |
+| vu real_ln_fwd | nominal | 2,965,568 | 2,965,562 | -6 |
+| gm ep_bias_drop_resid | stress | 11,818 | 11,824 | +6 (+0.05 %) |
+| gm + rn_mkgen ep_bias_drop_resid | stress | 11,801 | 11,800 | -1 |
+| vu elem | stress | 64,886 | 64,814 | -72 (-0.11 %) |
+| vu emb | stress | 289,712 | 289,495 | -217 (-0.07 %) |
+| gm real_ffn1_256 | +bw=100000 | 2,434,148 | 2,434,148 | 0 |
+| gm real_ffn1_256 | +wlat variant | 3,841,685 | 3,841,684 | -1 |
+| vu real_ln_fwd | +wlat variant | 3,250,248 | 3,248,201 | -2,047 (-0.06 %) |
+
+Small decreases come from the write skid: a beat no longer stalls the engine while it waits for its WAR / WAW
+check or for stage A, because the two buffer entries absorb it. Small increases come from the extra cycle to stage A and
+from the registered idle flag.
 
 ## 4. Synthesis and timing (TSMC 65, ss 0.9 V 125 C, pre-layout)
 

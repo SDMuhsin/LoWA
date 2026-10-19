@@ -157,7 +157,12 @@ module mm_rdport #(
     wire            last_in = (c_in == rem_cur);
     wire [4:0]      tot = {1'b0, hc} + c_in[4:0];
     wire            flush = mf_v && !pk_first && (rem_in == 7'd0) && (hc != 4'd0);
-    wire            o_free = !dat_valid || dat_ready;
+    // P8f (PLAN R17): output skid entry (sk_*) behind the `dat` register, so the packer advances on a registered
+    // condition (o_free = skid entry empty) instead of on the engine's dat_ready; dat_ready only moves the skid
+    // entry into `dat` (one beat per cycle, no added latency: a beat goes to `dat` whenever it is free or leaves)
+    reg             sk_v;
+    reg  [255:0]    sk_d;
+    wire            o_free = !sk_v;
     wire            take = mf_v && rf_v && o_free && !flush;
     wire            emit = take && (tot >= 5'd8 || last_in);
     assign rf_pop = take;
@@ -179,32 +184,39 @@ module mm_rdport #(
     end
     always @(posedge clk) begin
         if (!rst_n) begin
-            dat_valid <= 1'b0; hc <= 4'd0; pk_first <= 1'b1; rem_in <= 7'd0;
+            hc <= 4'd0; pk_first <= 1'b1; rem_in <= 7'd0;
         end else begin
-            if (dat_valid && dat_ready) dat_valid <= 1'b0;
             if (flush && o_free) begin
-                dat_valid <= 1'b1;
                 hc <= 4'd0; pk_first <= 1'b1;
             end else if (take) begin
                 rem_in   <= rem_cur - c_in;
                 pk_first <= last_in && tot <= 5'd8;
-                if (emit) begin
-                    dat_valid <= 1'b1;
-                    hc <= (tot > 5'd8) ? tot[3:0] - 4'd8 : 4'd0;
-                end else hc <= tot[3:0];
+                if (emit) hc <= (tot > 5'd8) ? tot[3:0] - 4'd8 : 4'd0;
+                else hc <= tot[3:0];
             end
         end
     end
     // datapath (no reset).  A flush emits comb too: with pk_first = 0 its words 0 .. hc-1 are hold[0 .. hc-1]
-    // and the rest are past the request's length (don't-care), so `dat` has one data source and one load
-    // enable (fanout: the enable and the hold select each drive 256 flops, docs/p6a_report.md section 5)
-    wire ld_dat = emit || (flush && o_free);
+    // and the rest are past the request's length (don't-care), so a beat has one data source (comb)
+    wire ld_dat = emit || (flush && o_free);                  // a beat is emitted (only while the skid entry is empty)
+    wire d_free = !dat_valid || dat_ready;                    // `dat` is empty or leaves this cycle
     always @(posedge clk) begin
-        if (ld_dat)
-            for (md = 0; md < 8; md = md + 1) dat[32*md +: 32] <= comb[md];
+        if (!rst_n) begin
+            dat_valid <= 1'b0; sk_v <= 1'b0;
+        end else if (d_free) begin
+            dat_valid <= sk_v || ld_dat; sk_v <= 1'b0;
+        end else if (ld_dat) sk_v <= 1'b1;
+    end
+    always @(posedge clk) begin
+        if (d_free) begin
+            if (sk_v) dat <= sk_d;
+            else if (ld_dat)
+                for (md = 0; md < 8; md = md + 1) dat[32*md +: 32] <= comb[md];
+        end else if (ld_dat)
+            for (md = 0; md < 8; md = md + 1) sk_d[32*md +: 32] <= comb[md];
         if (take)
             for (md = 0; md < 8; md = md + 1) hold[md] <= emit ? comb[md+8] : comb[md];
     end
-    assign idle = (q_cnt == {(RQL+1){1'b0}}) && !mf_v && !dat_valid;
+    assign idle = (q_cnt == {(RQL+1){1'b0}}) && !mf_v && !dat_valid && !sk_v;
 endmodule
 `default_nettype wire
