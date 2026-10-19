@@ -125,7 +125,7 @@ Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
 | tt / ff, 5.25 ns | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
 | **ss, 7.75 ns (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
 | tt, 7.75 ns | 0 / 0 [0] | +3.076 | +0.016 [0] |
-| ff, 7.75 ns | __CHIPFF775__ |
+| ff, 7.75 ns | 0 / 0 [0] | +3.436 | -0.0053 / -6.47 [6,012] (pre-CTS, informative) |
 
 Worst setup endpoint per unit (ss, 5.25 ns): u_gm -2.272 [11], u_mm -1.748 [41], u_lw -1.666 [419], u_vu -0.119
 [5], u_seq +1.205, u_axil +3.507. Every unit closes 5.25 ns in its own complete-netlist run (table above), so
