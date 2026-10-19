@@ -24,3 +24,14 @@ Branch p9c, server tau-02, clone ~/lowa_tsmc65/p9c (netlists read from the P8 ch
   unit's pre-layout run at 5.5 ns. vu16 (16 FMA lanes + latch-RF banks) is the structural analogue of gm16 (FMA PE
   array + latch-RF banks); its measured post-/pre-layout factors are applied to gm16, labelled as an extrapolation.
 - Running: lw clock_opt (12 threads), mm floorplan->groute (4 threads). vu16 next (~14 GB est.).
+
+## 2026-10-19 21:20 UTC: quota incident
+- The shared home quota filled at ~21:05 UTC; vu16 floorplan failed in save_lib, and the lw / mm clock_opt sessions
+  (62 / 22 min in, both in clock-net detail routing) would have failed at their save. Both were stopped by PID.
+- Per the PI, run dirs, databases, parasitics, PT outputs and logs moved to /tmp/lwta_p9c on tau-02 (mode 700,
+  symlinked from the clone's build/tsmc65/{pnr,pt,summary}); about 2.3 GB, /tmp has 80 GB free. To be deleted when the
+  numbers are final. The lw / mm placements (finished before the quota hit) are intact.
+- Relaunched: vu16 floorplan->groute (8 threads), lw cts->groute (6), then mm cts->groute (6). clock_opt now runs
+  build_clock + final_opto without clock detail routing (T65_CTS_ROUTE=0); clock and signal nets get the same global route.
+- Measured so far: mm place_opt 31.5 min / 4.4 GB (4 threads); pre-layout references at 5.5 ns (same units, same
+  method as P8): lw ss setup WNS 0 (flop +1.179), lw tt vectorless 33.9 mW (clock network 54 %), mm ss +0.172.
