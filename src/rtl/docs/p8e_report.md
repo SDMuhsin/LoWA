@@ -150,17 +150,20 @@ their bank / lane / PE children are the 4.0 ns runs).  The macro variant's child
 |---|---|---|---|---|---|---|---|
 | lw | latch RF | 1.281 | 0.727 | 0.554 | +0.0007 | -0.0013 | DC, this phase |
 | lw | macro | **0.771** | 0.225 | 0.545 | +0.0016 | -0.090 | DC, this phase |
-| vu16 | latch RF | 4.298 | 2.316 | 1.982 | 0.000 | -0.0011 | P8d |
+| vu16 | latch RF | 4.236 | 2.309 | 1.927 | 0.000 (met) | -0.0011 | DC, this phase (P8d: 4.298 mm2, met) |
 | vu16 | macro | **2.691** | 0.793 | 1.898 | **-0.510** (TNS -178, 533 endpoints) | -0.0084 | DC, this phase |
 | gm16 | latch RF | 11.167 | 5.845 | 5.321 | 0.000 | -0.0055 | P8d |
 | gm16 | macro | **6.661** | 1.662 | 4.999 | +0.0001 (met) | -0.053 (1,134 endpoints) | DC, this phase (the labelled estimate, latch logic + macro banks, was 6.984) |
 
-vu16 macro variant: it misses 5.25 ns by 0.51 ns, while P8d's latch run meets it.  The violating groups are
+vu16 macro variant: it misses 5.25 ns by 0.51 ns, while the latch RF meets it, both through the same wrapper at
+the same clock (and also in P8d's own run).  The violating groups are
 mostly the unit-spanning paths that P8c / P8c2 already saw in vu16 at earlier clocks:
 - lane output buffer -> writer `u_wr/lane_ob_reg` (237 endpoints, -0.51 ns; 4.16 ns in the lane, 1.33 in the writer);
 - lane `sfo_cnt` -> sequencer `u_seq` state (about 140 endpoints, -0.51 ns, 4.84 ns of top-level wire).
-P8d's own vu16 runs moved between -1.11 ns (5.0) and met (5.25) on these paths, so DC-topographical run-to-run
-placement spread is of this size.  One group is caused by the macros: column-vector bank -> broadcast register
+These paths do not pass through a macro.  The macro variant places a smaller unit (2.69 vs 4.24 mm2), with the
+macros as large fixed cells, so the lane-to-writer and lane-to-sequencer wires come out differently.  P8d's own vu16
+runs on the same paths moved between -1.11 ns (5.0) and met (5.25), so DC-topographical placement spread is of
+this size.  Without a floorplan, the miss cannot be attributed further.  One group is caused by the macros: column-vector bank -> broadcast register
 `b_cv*_reg` (24 endpoints, -0.46 ns).  4.45 ns of that path is inside the bank abstraction: the macro output and
 adapter mux drive the 16-lane broadcast, and as a dont_touch child the bank cannot be re-buffered by the parent.
 The latch RF's q register has the same structure but a flop clock-to-q instead of a ~1.0 ns macro access.  DC power
