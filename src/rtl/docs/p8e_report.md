@@ -158,8 +158,8 @@ their bank / lane / PE children are the 4.0 ns runs).  The macro variant's child
 The estimates (labelled) assume the units' non-memory logic is unchanged.  lw supports this: its logic is
 0.554 mm2 with latch banks and 0.545 mm2 with macros.  DC power of lw at ss (DC default vectorless, both variants
 through the same wrapper): latch 26.5 mW (leakage 8.0), macro 22.8 mW (leakage 5.0).  The lw macro variant has more
-pre-layout hold violations (456 endpoints, worst -0.09 ns), which are paths into the macro pins with the macro's
-hold requirement.  Hold is fixed after placement in both variants (P8d also leaves pre-layout hold to layout).
+pre-layout hold violations (456 endpoints, worst -0.09 ns, total -10.8 ns).  The summary does not name the paths; the likely source (not verified) is the
+macros' input hold requirements at the ff corner.  Pre-layout hold is left to layout in both variants, as in P8d.
 
 
 ## 7. Limitations
