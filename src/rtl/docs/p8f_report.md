@@ -92,7 +92,47 @@ from the registered idle flag.
 
 ## 4. Synthesis and timing (TSMC 65, ss 0.9 V 125 C, pre-layout)
 
-__TIMING__
+Server flow: `flow/tsmc65/run_p8f.sh`. The unchanged blocks (top_chip, gm16_p5.25, vu16_p5.25, lw, seq, axil and their
+children) are P8d's DC runs, linked read-only. rng9, rng3 and mm are re-synthesised from this branch at 5.25 ns
+(DC topographical, ss, IO budget 20 %). The flat-chip PrimeTime setup is the same as P8d's: all 17 netlists, every unit's DC SPEF,
+the top's own SPEF skipped, ideal clocks.
+
+### 4.1 Round 1 (commit 86a26a6: request skid buffers, registered idle flags, registered mk_req_ready)
+
+| block @ 5.25 ns, ss | setup WNS (ns) | area (um2) | flops | DC wall / peak RSS |
+|---|---|---|---|---|
+| rng9 (rn_mkgen, 9 cores) | +0.0001 | 111,199 | 1,480 | 5 min / 2.5 GB |
+| rng3 (rn_mkgen, 3 cores) | +0.0037 | 39,244 | 729 | 4 min / 2.4 GB |
+| mm (own + children) | +0.0008 | 1,191,833 (P8d at 4.0 ns: 1,218,577) | 82,009 (P8d: 78,991) | 42 min / 3.7 GB |
+
+DC integrity scan for mm: 0 unresolved references, 0 latches, check_design clean. The worst mm paths are now internal:
+buffer head -> RAW compare -> pending queue, and write head -> compare -> another buffer's age counter.
+
+Flat chip, ss, 5.25 ns: **setup WNS -0.735 ns, TNS -34.66 ns, 516 endpoints** (P8d: -2.272 / -569.9 / 476);
+hold +0.050, 0 violators.
+
+| unit (endpoints in) | P8d WNS [viol] | round 1 WNS [viol] |
+|---|---|---|
+| u_gm | -2.272 [11] | -0.006 [1] |
+| u_mm | -1.748 [41] | -0.735 [510] |
+| u_lw | -1.666 [419] | 0.000 [0] |
+| u_vu | -0.119 [5] | -0.119 [5] |
+| u_seq / u_axil | +1.205 / +3.507 | +1.205 / +3.507 |
+
+The gm `wr_addr -> wr_ready -> credit` loop and all the lw paths are gone. The worst remaining path is
+`u_vu/u_ld/bs_mine_reg -> (vu 3.54 ns) -> rd_dat_ready -> (mm 2.17 ns) -> u_mm/g_rd_2__u_rd/u_mf/count_reg`. It runs
+from the vu loader's dat_ready, which is combinational and late in vu, through the mm_rdport packer (`o_free -> take -> FIFO pops`).
+That is a combinational path entering an mm_top handshake input, still in R17's scope (mm side).
+
+Period sweep in the same PT session (clock and IO delays scaled): 5.50 -0.485 [27], 5.75 -0.235 [7], **6.00 closes**
+(WNS 0.000, the latch write path at its borrow limit). Round 1 alone therefore takes the chip from 7.75 ns to **6.0 ns**.
+
+### 4.2 Round 2 (mm_rdport output skid entry)
+
+The packer now advances when a registered output skid entry is empty. `rd_dat_ready` only moves that entry into
+`dat`, the head register, with no added latency and one beat per cycle.
+
+__ROUND2__
 
 ## 5. Reproduce
 
