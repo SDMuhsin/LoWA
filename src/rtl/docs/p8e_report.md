@@ -7,6 +7,16 @@ this report uses compiled macros (liberty timing / power, vendor Verilog models,
 fallback.  The kit has no GDS or LVS for these macros, so this variant can be synthesised but **not taped out**.
 The latch RF stays the design of record.
 
+**Headline (5.25 ns, ss; power PrimePower tt vectorless):**
+
+| | latch RF (design of record) | SRAM macros (front-end only) |
+|---|---|---|
+| on-chip memory (108 banks, 146 KiB) | 8.86 mm2 | **2.68 mm2** (-70 %) |
+| chip cell area | 18.05 mm2 | **11.34 mm2** (-37 %) |
+| units at 5.25 ns | all meet | lw, gm16 meet; vu16 -0.51 ns (meets 5.5 ns) |
+| chip setup at 5.25 ns | -2.27 ns (PT), closes 7.75 ns | -2.65 ns (DC), same cross-unit mm_top limiter |
+| power, sum of units | 559 mW (leakage 82) | **487 mW** (leakage 49) |
+
 Everything kit-derived (liberty, .db, Verilog models, footprints, netlists, full reports) stays on the server under
 `~/lowa_tsmc65/sram/`.  The compiler names, the kit path and the macro instance names appear only in git-ignored
 site files.  This report names the compilers generically: **RF** is the single-port register-file compiler,
@@ -164,7 +174,9 @@ mostly the unit-spanning paths that P8c / P8c2 already saw in vu16 at earlier cl
 These paths do not pass through a macro.  The macro variant places a smaller unit (2.69 vs 4.24 mm2), with the
 macros as large fixed cells, so the lane-to-writer and lane-to-sequencer wires come out differently.  P8d's own vu16
 runs on the same paths moved between -1.11 ns (5.0) and met (5.25), so DC-topographical placement spread is of
-this size.  Without a floorplan, the miss cannot be attributed further.  One group is caused by the macros: column-vector bank -> broadcast register
+this size.  Without a floorplan, the miss cannot be attributed further.  The macro vu16 rebuilt at 5.5 ns (children
+included) closes it (+0.0001 ns, unit area 2.667 mm2).  This is above the 5.25 ns unit clock but well inside the
+7.75 ns chip clock of R17.  One group is caused by the macros: column-vector bank -> broadcast register
 `b_cv*_reg` (24 endpoints, -0.46 ns).  4.45 ns of that path is inside the bank abstraction: the macro output and
 adapter mux drive the 16-lane broadcast, and as a dont_touch child the bank cannot be re-buffered by the parent.
 The latch RF's q register has the same structure but a flop clock-to-q instead of a ~1.0 ns macro access.  DC power
