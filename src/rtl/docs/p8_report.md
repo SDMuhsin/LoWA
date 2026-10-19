@@ -125,7 +125,7 @@ Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
 | tt / ff, 5.25 ns | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
 | **ss, 7.75 ns (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
 | tt, 7.75 ns | 0 / 0 [0] | +3.076 | +0.016 [0] |
-| ff, 7.75 ns | 0 / 0 [0] | +3.436 | -0.0053 / -6.47 [6,012] (pre-CTS, informative) |
+| ff, 7.75 ns | 0 / 0 [0] | +3.436 | -0.0053 / -6.47 [6,012] (**pre-CTS, informative; fixed by hold buffering in P&R**, 4.3) |
 
 Worst setup endpoint per unit (ss, 5.25 ns): u_gm -2.272 [11], u_mm -1.748 [41], u_lw -1.666 [419], u_vu -0.119
 [5], u_seq +1.205, u_axil +3.507. Every unit closes 5.25 ns in its own complete-netlist run (table above), so
@@ -162,9 +162,16 @@ registered (an RTL change, not allowed in P8d; it needs PI sign-off). __CHIPDECI
 
 ### 4.3 Hold
 
-No hold fixing before CTS (ideal clocks; R13). At ff, 6,010 (sum over units) endpoints have negative hold slack, all between
--0.0053 ns and 0: the 0.05 ns hold uncertainty dominates and CTS / hold fixing in a layout flow would absorb them.
-No hold violations at ss or tt.
+**All hold numbers here are pre-CTS and informative; they are not sign-off figures.** What they mean: with ideal
+clocks (zero skew, zero insertion delay) PrimeTime checks that data launched at a clock edge does not reach the
+capturing flop or latch before that same edge plus the 0.05 ns hold uncertainty, at the fast corner (ff 1.1 V
+-40 C, where cells are fastest). The flat chip at 7.75 ns has **6,012 endpoints** at ff with negative hold slack
+(sum over units 6,010 in the unit runs), **all between -0.0053 ns and 0**, TNS -6.47 ns; they are short
+flop-to-flop hops (PE-to-PE operand and drain registers, bank write registers) whose data delay is a few ps below
+the 0.05 ns margin. No hold fixing was done (R13: no pre-CTS hold buffers). In place and route, the real clock tree
+replaces the ideal clock (its skew can make hold better or worse per path), and the router's hold-fixing step
+inserts delay buffers on the paths that still violate; violations of a few ps are routinely fixed that way, at a
+small area cost. There are no hold violations at ss or tt.
 
 ## 5. Formal equivalence (Formality)
 
