@@ -105,8 +105,27 @@ proc t65_path_top {p} {
     return $s
 }
 set i 0
-foreach_in_collection q [get_timing_paths -delay_type max -max_paths 3 -nworst 1] {
+foreach_in_collection q [get_timing_paths -delay_type max -max_paths 3 -nworst 1 -slack_lesser_than 1e9 -to [add_to_collection [all_registers -edge_triggered -data_pins] [all_outputs]]] {
     incr i; puts $fh "worst_split $i [t65_path_line $q] |[t65_path_top $q]"
+}
+# paths that pass through more than one top-level instance (cross-unit), among the T65_XPATHS worst endpoints:
+# grouped by the sequence of instances, with count and worst slack
+if {[envd T65_XPATHS 0] > 0} {
+    set xg [dict create]
+    foreach_in_collection q [get_timing_paths -delay_type max -max_paths [envd T65_XPATHS 0] -nworst 1 -slack_lesser_than [envd T65_XSLACK 2.5] -to [add_to_collection [all_registers -edge_triggered -data_pins] [all_outputs]]] {
+        set seq {}
+        foreach_in_collection pt [get_attribute $q points] {
+            set c [split [get_object_name [get_attribute $pt object]] /]
+            set k [expr {[llength $c] > 1 ? [lindex $c 0] : "port"}]
+            if {[lindex $seq end] ne $k} { lappend seq $k }
+        }
+        if {[llength [lsort -unique [lsearch -all -inline -not -exact $seq port]]] < 2} continue
+        set key [join $seq >]; set sl [get_attribute $q slack]
+        if {![dict exists $xg $key]} { dict set xg $key [list 0 $sl [t65_path_line $q]] }
+        lassign [dict get $xg $key] n w l
+        dict set xg $key [list [incr n] [expr {min($w, $sl)}] $l]
+    }
+    dict for {k v} $xg { lassign $v n w l; puts $fh [format "xunit %s n %d wns %.4f worst %s" $k $n $w $l] }
 }
 # worst setup / hold slack per unit instance (endpoints inside the instance) and at the top level
 set regd [all_registers -data_pins]
