@@ -146,3 +146,11 @@ src/rtl/
   (area, timing, power). If no: CACTI-style modelled SRAM numbers, labelled as modelled. Isolation: branch
   `p8e`, server dir ~/lowa_tsmc65/sram, light jobs only while P8d runs big ones; merged to main by the PI after
   P8d. Kit-derived views stay on the server.
+- R17 (2026-10-19) P8d flag: flat-chip PT misses 5.25 ns by -2.27 ns through combinational cross-unit
+  handshakes into mm_top (gm/lw/vu -> mm ready -> back), so the honest chip clock without RTL change is
+  ~7.52 -> 7.75 ns (129 MHz). Decision: headline the chip-level clock (never the unit-level 5.25 ns as the
+  chip clock). In parallel, PI signs off one RTL fix (phase P8f, branch `p8f`): register every mm_top ready /
+  handshake output with full-throughput skid buffers (mm side only; other units untouched), bit-exact, cycle
+  deltas reported, then mm DC + flat-chip PT at 5.25 ns. If P8f closes the chip by the results freeze, the
+  headline becomes that period with the fix merged; otherwise 7.75 ns stands and P8f is reported as the
+  identified fix.
