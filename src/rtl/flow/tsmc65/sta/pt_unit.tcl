@@ -105,14 +105,14 @@ proc t65_path_top {p} {
     return $s
 }
 set i 0
-foreach_in_collection q [get_timing_paths -delay_type max -max_paths 3 -nworst 1] {
+foreach_in_collection q [get_timing_paths -delay_type max -max_paths 3 -nworst 1 -slack_lesser_than 1e9] {
     incr i; puts $fh "worst_split $i [t65_path_line $q] |[t65_path_top $q]"
 }
 # paths that pass through more than one top-level instance (cross-unit), among the T65_XPATHS worst endpoints:
 # grouped by the sequence of instances, with count and worst slack
 if {[envd T65_XPATHS 0] > 0} {
     set xg [dict create]
-    foreach_in_collection q [get_timing_paths -delay_type max -max_paths [envd T65_XPATHS 0] -nworst 1] {
+    foreach_in_collection q [get_timing_paths -delay_type max -max_paths [envd T65_XPATHS 0] -nworst 1 -slack_lesser_than [envd T65_XSLACK 2.5]] {
         set seq {}
         foreach_in_collection pt [get_attribute $q points] {
             set c [split [get_object_name [get_attribute $pt object]] /]
