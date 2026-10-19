@@ -170,7 +170,10 @@ if {[envd T65_PT_AREA 0]} {
 if {$power ne "none"} {
     if {$power eq "saif"} {
         foreach {f strip inst} $::env(T65_SAIF) {
-            if {$inst eq ""} { redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip $f } } else { redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip -path $inst $f } }
+            # read_saif reports name mismatches as errors inside the redirect; the annotation it made stands, and its
+            # coverage is in the summary (switching lines), so the script goes on
+            if {$inst eq ""} { set rc [catch {redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip $f }}] } else { set rc [catch {redirect -append $out/rpt_saif.rpt { read_saif -strip_path $strip -path $inst $f }}] }
+            puts $fh "saif_read [file tail $f] redirect_error $rc"
         }
         redirect $out/rpt_switching.rpt { report_switching_activity -list_not_annotated -max_objects 20 }
     } else {
