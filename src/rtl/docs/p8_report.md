@@ -236,8 +236,8 @@ __MMHIER2__
   at the 3 h cap (read and write ports: `q_a` 1,920, `u_mf/mem` 1,760, write skid `s_d` / `h_d` 1,176 each,
   `a_d` 559, `q_n` 448, ...). Hierarchical (Formality's `write_hierarchical_verification_script`, which verifies
   each sub-block alone with boundary constraints that it then checks at the parent, and finally the top with the
-  sub-blocks black-boxed): **all 42 sub-blocks SUCCEEDED** (the 8 read ports, 4 write ports, 12 skid buffers, the
-  mask generators, FIFOs, ...); the remaining top-level glue verification left 13 points unverified at its 20 min
+  sub-blocks black-boxed): **all 42 sub-blocks SUCCEEDED** (8 read ports, 4 write ports, 12 skid buffers, the 2 mask
+  generators, 15 reset buffers, 1 FIFO); the remaining top-level glue verification left 13 points unverified at its 20 min
   cap. __MMHIER2NOTE__ Status: **INCONCLUSIVE**; no failing point in any mm run.
 
 ## 6. Integrity
