@@ -67,7 +67,17 @@ set_app_var hdlin_interface_only ""
 match
 report_unmatched_points                  > $fo/rpt/unmatched.rpt
 report_black_boxes                       > $fo/rpt/black_boxes.rpt
+# T65_FM_HIER=<level>: Formality's own hierarchical verification (write_hierarchical_verification_script): each
+# sub-block at or above that level is verified separately (with the boundary constraints Formality derives and
+# then checks at the parent), then the top with those blocks black-boxed.  Per-block results go to
+# rpt/hier_results.txt; the final verify below is the top-level one.
+if {[info exists ::env(T65_FM_HIER)]} {
+    write_hierarchical_verification_script -replace -level $::env(T65_FM_HIER) $fo/hier_script.tcl
+    redirect -tee $fo/rpt/hier_run.log { source $fo/hier_script.tcl }
+    set ok [verify]
+} else {
 set ok [verify]
+}
 report_status                            > $fo/rpt/status.rpt
 report_failing_points                    > $fo/rpt/failing.rpt
 report_aborted_points                    > $fo/rpt/aborted.rpt
