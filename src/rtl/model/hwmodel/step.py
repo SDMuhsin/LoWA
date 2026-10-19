@@ -124,8 +124,12 @@ def step(W, inp, verbose=True):
     a = H.tanh(H.gemm(xc, head["dw"], head["db"]))
     a2 = H.drop(a, k2, DS)
     z = H.gemm(a2, head["ow"], head["ob"])
-    inv_b = H.recip(np.array([Bn], f32))[0]
-    loss, dz = H.ce(z, labels, np.ones(Bn, f32), inv_b)
+    # spec.md D3: a short batch is padded with dummy rows of loss weight 0 and the loss divides by
+    # B_ACT (optional inputs loss_w / b_act; the P1 dumps have neither: all rows real)
+    b_act = int(inp["b_act"]) if "b_act" in inp else Bn
+    lossw = inp["loss_w"].astype(f32) if "loss_w" in inp else np.ones(Bn, f32)
+    inv_b = H.recip(np.array([b_act], f32))[0]
+    loss, dz = H.ce(z, labels, lossw, inv_b)
     gh = {"ow": H.gemm_tn(dz, a2), "ob": H.colsum(dz)}
     dh = H.tanh_bwd(H.drop(H.gemm_nn(dz, head["ow"]), k2, DS), a)
     gh["dw"], gh["db"] = H.gemm_tn(dh, xc), H.colsum(dh)
@@ -167,12 +171,13 @@ def step(W, inp, verbose=True):
     flat = np.concatenate([g.reshape(-1) for g in grads]).astype(f32)
     norms, G, clip = H.gnorm_clip(flat, off, [g.shape[-1] for g in grads])
     nb = int(inp["n_batches"])
-    Ttot = EPOCHS * nb
+    Ttot = int(inp["t_total"]) if "t_total" in inp else EPOCHS * nb      # optional: other tasks' runs
+    warmup = int(inp["warmup"]) if "warmup" in inp else WARMUP
     sf = f32(s)
-    if s < WARMUP:
-        fr = H.mul(sf, f32(1.0 / WARMUP))[0]
+    if s < warmup:
+        fr = H.mul(sf, f32(1.0 / warmup))[0]
     else:
-        fr = H.fmax(H.mul(f32(Ttot - s), f32(1.0 / (Ttot - WARMUP))), f32(0.0))[0]
+        fr = H.fmax(H.mul(f32(Ttot - s), f32(1.0 / (Ttot - warmup))), f32(0.0))[0]
     b1t, b2t = f32(1.0), f32(1.0)
     for _ in range(s + 1):                               # running products held on chip
         b1t, b2t = H.mul(b1t, BETA1)[0], H.mul(b2t, BETA2)[0]
