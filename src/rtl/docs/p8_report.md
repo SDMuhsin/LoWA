@@ -311,7 +311,34 @@ Energy per full-size step (17.3 s): __ENERGY__
   these per-op constants; they change the step time by less than 2 ms.
 - docs/budget.md states the clock (section 1).
 
-## 9. Limitations (honest list)
+## 9. Related phases: P8f (registered mm_top handshakes) and P8e (SRAM-macro variant)
+
+**P8f (PLAN R17, docs/p8f_report.md).** This phase's flat-chip run (section 4.2) traced the 7.75 ns chip period to
+combinational ready paths through mm_top. P8f changed only mm_top / mm_rdport / mm_wrport / rn_mkgen, all on the
+mm side: two-entry skid buffers on `rd_req_ready` and `wr_ready`, which keep the read/write ordering through age
+counters; an output skid entry behind the read-data packer; and registered `mk_req_ready` and idle flags. The
+change is bit-exact on lint, test-mem (47/47), test-rng, test-ctrl and the reduced e2e (-0.002 % cycles), with the
+overlap check at 0. It costs +5,074 flops and about the same area (mm 1.216 mm2 vs 1.219). mm, rng9 and rng3 were
+re-synthesised at 5.25 ns. The mm run itself misses by -0.038 ns on mm-internal ordering paths (DC QoR spread;
+round 1 of the same logic met +0.0008). The flat chip then misses 5.25 ns by -0.119 ns, only on seq > vu (out of
+scope, PI) and on mm-internal paths, and **closes 5.50 ns**. This report's chip numbers at 5.5 ns use P8f's mm /
+rng9 / rng3 netlists (copied read-only into this checkout as `hier/{mm,rng9,rng3}_p8f`) with every other block
+unchanged.
+
+**P8e (PLAN R16, docs/p8e_report.md).** This variant replaces the 108 latch-RF banks with compiled single-port SRAM /
+register-file macros. The kit's memory compilers produce front-end views (liberty, Verilog model, footprint) but no
+GDS / LVS, so it can be synthesised but not taped out. The latch RF stays the design of record. At 5.25 ns, ss:
+
+| | latch RF (this report) | SRAM macros (P8e, front-end only) |
+|---|---|---|
+| on-chip memory, 146 KiB | 8.86 mm2 | **2.68 mm2** (-70 %) |
+| chip cell area | 18.05 mm2 | **11.34 mm2** (-37 %) |
+| unit timing | all units close 5.25 ns | gm16, lw close 5.25; vu16 -0.51 ns at 5.25, closes 5.5 ns |
+| unit power, PrimePower tt vectorless (gm16 + vu16 + lw) | 503 mW (leakage 75) | **432 mW** (leakage 42) |
+
+Per the PI, the headline clock of both variants is 5.5 ns. The macro variant's chip-level PrimeTime was not run here.
+
+## 10. Limitations (honest list)
 
 - **Pre-layout only.** No floorplan, placement, CTS or routing. Wires are DC topographical estimates per block
   (each block placed alone, as a compact region); clocks are ideal; hold is informative only. A floorplan-aware run
@@ -331,7 +358,7 @@ Energy per full-size step (17.3 s): __ENERGY__
 - The mm Formality run __MMLIM__
 - Units that closed 4.0 ns were not re-synthesised at 5.25 ns (area / power slightly above a 5.25 ns synthesis).
 
-## 10. Reproduction
+## 11. Reproduction
 
 From `src/rtl`, with the git-ignored site files in `flow/tsmc65/site/` (templates `*.example.*`):
 
