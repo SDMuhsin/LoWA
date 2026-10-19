@@ -20,7 +20,7 @@ numbers are in the repository.
 | setup, PrimeTime on the complete chip netlist, ss 5.5 ns | **WNS 0, 0 violators**; worst flop endpoint +0.131 ns (seq > vu, accepted by the PI); without the mm fix -2.27 ns at 5.25 and closed at 7.75 |
 | setup at tt / ff, 5.5 ns | 0 violators at both; worst flop endpoint +1.026 ns (tt) / +1.186 ns (ff) |
 | hold (pre-CTS, ideal clocks, informative) | ss / tt: 0 violators; ff: 6,011 endpoints between -0.0053 ns and 0 (TNS -6.47 ns), left to hold fixing in place and route (section 4.3) |
-| Formality, RTL vs netlist | every block of the chip **SUCCEEDED** (0 failing, 0 unverified) except **mm: INCONCLUSIVE**: 0 failing points; hierarchically, all 42 mm sub-blocks pass and the mm top glue has __MMUNV__ unverified points at the cap (section 5) |
+| Formality, RTL vs netlist | every block of the chip **SUCCEEDED** (0 failing, 0 unverified) except **mm: INCONCLUSIVE**: 0 failing points; hierarchically, all 42 mm sub-blocks pass and the mm top glue has 13 unverified points at the cap (section 5) |
 | average power, tt 1.0 V 25 C, 181.8 MHz | **0.475 W** vectorless, flat chip (toggle 0.1, static probability 0.5; leakage 0.081 W); **0.60 W** with RTL SAIF of real workloads for gm16 / vu16 (upper-side, section 7); about 8.6-10.8 J per training step |
 | full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 18.1 s** at 181.8 MHz (DRAM: 256-bit AXI = 5.82 GB/s peak, 5.30 GB/s average demand); 25.5 s without the mm fix (7.75 ns) |
 
@@ -214,7 +214,7 @@ chip is covered exactly once.
 | mm without the fix (P8d), rng verified inside, rng .svf added | - | **INCONCLUSIVE** | 78,038 | **0** | **3,451 unverified** (3 h cap), 0 aborted | 2,720 (+3 ref DFF1X) | 3 h 9 min |
 | **mm with P8f (design of record at 5.5 ns), rng verified inside** | - | **INCONCLUSIVE** | 77,815 | **0** | **8,748 unverified** (3 h cap), 0 aborted | 2,905 | 3 h |
 | **mm with P8f, Formality hierarchical verification** (`write_hierarchical_verification_script -level 1`) | each sub-block in its own verification, then the top with the 42 sub-blocks black-boxed | **42 / 42 sub-blocks SUCCEEDED; top: INCONCLUSIVE** | top 8,328 | 0 | **13 unverified** (12 black-box pins, 1 DFF) at the 20 min per-verification cap | | 50 min |
-__MMHIER2__
+| mm with P8f, hierarchical, rerun with a 2 h per-verification cap | as above | **42 / 42 SUCCEEDED; top: INCONCLUSIVE** | top 8,328 | 0 | **13 unverified** (12 black-box pins, 1 DFF) at the 2 h cap | | 2 h 9 min |
 | rng9 / rng3, P8f netlists | - | **SUCCEEDED** | 1,499 / 748 | 0 | 0 / 0 | | 1-2 min |
 | seq (ct_seq + ct_dma) | - | **SUCCEEDED** | 8,942 | 0 | 0 / 0 | 206 | 76 s |
 | axil (top_axil) | - | **SUCCEEDED** | 89 | 0 | 0 / 0 | 0 | 8 s |
@@ -238,7 +238,7 @@ __MMHIER2__
   each sub-block alone with boundary constraints that it then checks at the parent, and finally the top with the
   sub-blocks black-boxed): **all 42 sub-blocks SUCCEEDED** (8 read ports, 4 write ports, 12 skid buffers, the 2 mask
   generators, 15 reset buffers, 1 FIFO); the remaining top-level glue verification left 13 points unverified at its 20 min
-  cap. __MMHIER2NOTE__ Status: **INCONCLUSIVE**; no failing point in any mm run.
+  cap. A rerun with a 2 h cap for that last verification left the same 13 points unverified. Status: **INCONCLUSIVE**; no failing point in any mm run.
 
 ## 6. Integrity
 
@@ -468,4 +468,8 @@ Files: `flow/tsmc65/run_p8d.sh`, `syn/run_exit.sh`, `lec/{fm_setup,fm_unit}.tcl`
 `sta/{pt_unit.tcl,run_pt_unit.sh}`, `sim/{run_saif.sh,saif_scale.py}`, `tb/power/saif_ctl.sv`; summaries
 `build/tsmc65/summary/{hier,fm,ptu}_*.txt` on the server.
 
-Commits: __COMMITS__
+Commits: P8d flow and report commits are tagged `[P8d]` on main, from 2bfcc90 (exit-rule chain) onwards; the RTL
+under every netlist is that of 072d71f (P8c2) except mm / rng (P8f, merged in f035729; P8f report 5c83949). The
+5.25 ns unit runs, the flat-chip runs at 5.25 / 7.75 / 5.5 ns and all Formality runs were made in the server
+checkout of pushed main (`make sync65-pull` before each batch). The P8f mm / rng9 / rng3 netlists come from P8f's
+own clone at 5c83949.
