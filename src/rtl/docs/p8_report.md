@@ -411,8 +411,11 @@ Per the PI, the headline clock of both variants is 5.5 ns. The macro variant's c
   register clock pins are counted), estimated wires, ss RC at tt. The vectorless figures depend on the stated
   toggle rates. The SAIF figures cover two unit workloads over 200 k-cycle windows, with about 10 % of the
   sequential outputs annotated directly and the rest (latch-RF arrays included) propagated.
-- **test-e2e-full was not re-run after the P8c / P8c2 repairs.** The repairs were checked bit-exact with lint,
-  test-unit and the reduced test-e2e (P8c / P8c2 reports); the 12-layer e2e (5 h) last ran before them.
+- **test-e2e-full covers the P8c / P8c2 repairs but not P8f.** The 12-layer, 2-step run at commit 89e4c0f
+  (all P8c / P8c2 repairs, before the P8f mm skid buffers) passes: 24/24 result tensors bit-exact vs L1 in both
+  steps, all 8,346,904 step-2 DRAM writes match, losses 0.785167277 / 0.230305105 (unchanged since P7a). The
+  P8f change is covered by lint, test-mem (47/47), test-mem-banks, test-ctrl, test-rng, the reduced test-e2e and
+  the mm overlap checker, but not by a 12-layer run.
 - **tsmc65-backend simulations skipped** (P8a, R12): real_ffn1_256 and one real_ln_fwd sensitivity row on the
   latch-RF backend (~10 h each in Verilator). The latch RF is covered by the --quick set, Formality of every
   bank, and the VCS power runs of section 7 (which simulate it, but do not check results).
