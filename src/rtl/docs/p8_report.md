@@ -14,15 +14,15 @@ numbers are in the repository.
 
 | item | result |
 |---|---|
-| chip clock | **7.75 ns (129.0 MHz) at ss 0.9 V 125 C, chip level** (PLAN R17). Unit-level closure: 5.25 ns (R14 / R15 exit rule: vu16 misses 4.75 and 5.0 ns, closes 5.25 ns); the flat chip misses 5.25 ns by 2.27 ns on cross-unit paths through mm_top's combinational ready outputs, and closes 7.75 ns (flop slack +0.229 ns) |
-| standard-cell area (ss netlists, cells only) | **18.05 mm2**, of which **8.89 mm2** latch register file (37,376 words, 146 KiB) |
-| leaf cells / flops / latches | 5,211,998 / 415,461 / 1,196,032 (+ 37,376 word ICGs, + DC clock gates) |
-| setup, PrimeTime on the complete chip netlist | __PTSS__ |
+| chip clock | **5.5 ns (181.8 MHz) at ss 0.9 V 125 C, chip level** (flat-chip PrimeTime, with P8f's registered mm_top handshakes; PLAN R17). Without the mm fix: 7.75 ns (129.0 MHz). Unit-level closure: 5.25 ns (R14 / R15 exit rule) |
+| standard-cell area (ss netlists, cells only) | **18.04 mm2**, of which **8.89 mm2** latch register file (37,376 words, 146 KiB) |
+| leaf cells / flops / latches | 5,189,049 / 420,535 / 1,196,032 (+ 37,376 word ICGs, + DC clock gates) |
+| setup, PrimeTime on the complete chip netlist, ss 5.5 ns | **WNS 0, 0 violators**; worst flop endpoint +0.131 ns (seq > vu, accepted by the PI); without the mm fix -2.27 ns at 5.25 and closed at 7.75 |
 | setup at tt / ff | __PTTTFF__ |
 | hold (pre-CTS, ideal clocks, informative) | __PTHOLD__ |
 | Formality, RTL vs netlist | __FMSUM__ |
-| average power, tt 1.0 V 25 C, 129.0 MHz | __POWER__ |
-| full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 25.5 s** at 129.0 MHz (DRAM: 256-bit AXI = 4.13 GB/s peak, 3.76 GB/s average demand); 17.3 s at the unit-level 5.25 ns |
+| average power, tt 1.0 V 25 C, 181.8 MHz | __POWER__ |
+| full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 18.1 s** at 181.8 MHz (DRAM: 256-bit AXI = 5.82 GB/s peak, 5.30 GB/s average demand); 25.5 s without the mm fix (7.75 ns) |
 
 __SUMMARY_NOTES__
 
@@ -63,11 +63,12 @@ latch count exactly.
 | gemm, gm_top 16 x 16 (256 PEs) | gm16 (5.25) | 3,272,195 | **11.167** | 5.845 (24,576 words) | 181,373 | 786,432 |
 | vec, vu_top V = 16 | vu16 (5.25) | 1,221,897 | **4.298** | 2.316 (9,728 words) | 112,086 | 311,296 |
 | lowa, lw_top | lw (4.0) | 346,958 | **1.300** | 0.730 (3,072 words) | 36,806 | 98,304 |
-| mem, mm_top (8 R / 2 keep / 4 W channels, 2 mask generators) | mm (4.0) | 357,861 | **1.219** | 0 | 78,991 | 0 |
+| mem, mm_top (8 R / 2 keep / 4 W channels, 2 mask generators), P8f | mm (5.25, P8f) | 334,912 | **1.216** | 0 | 84,065 | 0 |
 | ctrl, ct_seq + ct_dma | seq (4.0) | 13,065 | 0.063 | 0 | 6,203 | 0 |
 | ctrl, top_axil | axil (4.0) | 22 | 0.0001 | 0 | 2 | 0 |
 | top_chip glue | chip (5.25) | 0 | 0 | 0 | 0 | 0 |
-| **chip** | | **5,211,998** | **18.046** | **8.891** | **415,461** | **1,196,032** |
+| **chip** | | **5,189,049** | **18.044** | **8.891** | **420,535** | **1,196,032** |
+| (chip without the mm fix: P8d mm at 4.0 ns, 357,861 cells, 1.219 mm2, 78,991 flops) | | 5,211,998 | 18.046 | 8.891 | 415,461 | 1,196,032 |
 
 - The latch RF (R11a: no usable SRAM compiler) is 49 % of the cell area. Per word: 32 latches, a write-data
   register share and a word ICG; ~238 um2 per word (bank512: 121,710 um2 / 512).
