@@ -187,6 +187,24 @@ pre-layout hold violations (456 endpoints, worst -0.09 ns, total -10.8 ns).  The
 macros' input hold requirements at the ff corner.  Pre-layout hold is left to layout in both variants, as in P8d.
 
 
+### 6.2 Chip top
+
+The macro-variant chip DC (top_chip linking gm16 / vu16 / lw / mm / seq / axil as abstractions; mm, seq, axil, rng
+were rebuilt in this tree at 5.25 ns) was started at 22:22 and stopped at 22:40 by PID.  It had reached 11 GB and
+was still growing, and with P8d's jobs on the box the total went over the PI's 22 GB cap.  It is queued again
+behind a memory gate (14 GB need).  **Labelled estimate** until it runs: mm, seq and axil hold no banks, so the chip
+differs from the latch chip by the unit deltas:
+
+| unit | latch RF mm2 | macro mm2 | delta mm2 |
+|---|---|---|---|
+| lw | 1.281 | 0.771 | -0.510 |
+| vu16 | 4.236 | 2.691 | -1.545 |
+| gm16 | 11.167 | 6.661 | -4.506 |
+| **chip (estimate)** | P8d chip | P8d chip - 6.56 | **-6.56** |
+
+The bank-level roll-up of section 6 gives -6.18 mm2 for memory alone; the rest is the units' slightly smaller
+logic (gm16's latch children are 4.0 ns runs).
+
 ## 7. Limitations
 
 - **Not buildable:** the compilers list GDS and LVS views as not available.  This variant is a what-if for area,
