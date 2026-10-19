@@ -26,7 +26,14 @@ numbers are in the repository.
 
 __SUMMARY_NOTES__
 
-## 2. Chip clock (exit rule)
+## 2. Chip clock
+
+The clock was settled in three steps. (1) R14 / R15 exit rule, per unit: **5.25 ns** (this section). (2) The flat
+chip, PrimeTime on all netlists (section 4.2), misses 5.25 ns on cross-unit paths through mm_top's combinational
+ready outputs and closes **7.75 ns** (R17). (3) P8f registered those handshakes (mm side only, bit-exact). The
+flat chip then closes **5.5 ns**, the chip clock (section 9). 7.75 ns is kept as the "without the mm fix" figure.
+
+### 2.1 Unit-level exit rule
 
 R12 fixed the target at 4.0 ns. After two RTL timing rounds (P8c, P8c2) gm16 and vu16 still missed it, so the
 R14 exit rule applies: the chip clock is the slowest unit's closed period on the 0.25 ns grid, with no further RTL
@@ -118,7 +125,7 @@ that is a flop or output (latch-RF endpoints borrow and sit at 0).
   They are within DC-vs-PT correlation and far below what placement will change; they are reported as misses.
 - Hold at ss and tt: no violators in any unit.
 
-Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
+Chip (flat, all 17 netlists). The rows "with P8f mm" use P8f's mm / rng9 / rng3 netlists and every other block as above. The rows "without the mm fix" use this phase's mm; **that chip does not meet 5.25 ns at ss**:
 
 | chip, flat (5,211,998 cells, 356 SPEF reads) | setup WNS / TNS (ns) [endpoints] | flop WNS | hold WNS [endpoints] |
 |---|---|---|---|
@@ -162,7 +169,10 @@ pair of units (gm-vu, gm-lw, seq-gm, seq-lw, seq-mm, axil) has a path with arriv
 
 So with the present RTL the chip-level period at ss, pre-layout, is about **5.25 + 2.27 = 7.52 ns**, i.e.
 7.75 ns on the 0.25 ns grid (129 MHz), unless the ready handshakes between the engines and mm_top are
-registered (an RTL change, not allowed in P8d; it needs PI sign-off). __CHIPDECISION__
+registered (an RTL change, not allowed in P8d). The PI decided (R17) to register them in a separate phase, P8f. With
+P8f's mm the flat chip closes **5.5 ns** at ss (WNS 0, worst flop endpoint +0.131 ns on seq > vu, which the PI
+accepted as is). At 5.25 ns it misses by -0.119 ns on that path (docs/p8f_report.md). Its only remaining
+cross-unit group with slack below 0.5 ns at 5.5 ns is seq > vu (17 endpoints).
 
 ### 4.3 Hold
 
@@ -203,6 +213,7 @@ chip is covered exactly once.
 | mm without the fix (P8d), rng verified inside, rng .svf added | - | **INCONCLUSIVE** | 78,038 | **0** | **3,451 unverified** (3 h cap), 0 aborted | 2,720 (+3 ref DFF1X) | 3 h 9 min |
 | **mm with P8f (design of record at 5.5 ns), rng verified inside** | - | **INCONCLUSIVE** | 77,815 | **0** | **8,748 unverified** (3 h cap), 0 aborted | 2,905 | 3 h |
 | mm with P8f, Formality hierarchical verification | per sub-block | __MMHIER__ |
+| rng9 / rng3, P8f netlists | - | **SUCCEEDED** | 1,499 / 748 | 0 | 0 / 0 | | 1-2 min |
 | seq (ct_seq + ct_dma) | - | **SUCCEEDED** | 8,942 | 0 | 0 / 0 | 206 | 76 s |
 | axil (top_axil) | - | **SUCCEEDED** | 89 | 0 | 0 / 0 | 0 | 8 s |
 | chip (top_chip) | 6 units | **SUCCEEDED** | 6,918 (6,484 black-box pins, 434 ports) | 0 | 0 / 0 | 0 | 19 s |
