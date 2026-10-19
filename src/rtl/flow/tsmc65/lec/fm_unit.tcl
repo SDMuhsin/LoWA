@@ -25,7 +25,13 @@ set fh [open $out/design.txt]; set design [string trim [read $fh]]; close $fh
 file mkdir $fo/rpt
 set_host_options -max_cores [expr {[info exists ::env(T65_CORES)] ? $::env(T65_CORES) : 8}]
 source $flow/lec/fm_setup.tcl
-set_svf $out/$block.svf
+# guidance: the block's own .svf, plus each child verified in this run (T65_FM_FULL_KIDS), whose register merges
+# and renames are recorded only in the child's own .svf
+set svfs [list $out/$block.svf]
+foreach k [split [string map {, " "} [expr {[info exists ::env(T65_FM_FULL_KIDS)] ? $::env(T65_FM_FULL_KIDS) : ""}]]] {
+    if {$k ne ""} { lappend svfs [t65_kid_dir [file dirname $out] $k]/$k.svf }
+}
+set_svf {*}$svfs
 
 read_db -technology_library [t65_db $corner]
 # ---- reference: the RTL DC read (same files, defines and site ICG wrapper)
