@@ -22,3 +22,11 @@
   values of each step (loss, logits, all gradients, norm, clip, lr, post params / m / v): 0 mismatches.
   GPU 1.5-1.7 s/step (the GPU is shared with another job at ~97 % util) vs L1 14-16 s.
 - Next: MRPC driver (gpuemu/run_mrpc.py) smoke test, then seeds 42-46 in parallel on cuda:0.
+
+## 2026-10-19 20:25 UTC: MRPC runs going
+- Seeds 42-46 started 20:07 UTC, 5 processes on cuda:0, ~3.2 s/step each -> ETA ~23:30 UTC (30 epochs).
+- In-run checkpoints vs L1 (check_step.py ckpt): seed 42 s 1, 113, 114 (short batch, 12 dummy rows) bit-exact
+  (all 2,393,165 values; both a fresh GPU step and the step the run itself took).
+- GPU vs RTL directly (check_rtl.py on make test-e2e-full's dumps, 12 layers, B 2 x L 32, 2 chained steps):
+  24/24 result tensors bit-exact, losses 0.785167277 / 0.230305105.
+- Epoch 0 dev: chip-forward eval and fp32 PyTorch eval give identical predictions on all 408 pairs.
