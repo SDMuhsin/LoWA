@@ -195,7 +195,9 @@ chip is covered exactly once.
 | bank256_lw / bank512_lw / bank768_lw | - | **SUCCEEDED** | 8,544 / 16,992 / 25,440 | 0 | 0 / 0 | 2 each | 18-98 s |
 | lw (lw_top) | 6 banks | **SUCCEEDED** | 37,175 | 0 | 0 / 0 | 1,073 | 262 s |
 | rng9 / rng3 (rn_mkgen) | - | **SUCCEEDED** | 1,474 / 747 | 0 | 0 / 0 | 1 / 4 | 93 / 42 s |
-| mm (mm_top) | 2 rn_mkgen | __MMROW__ |
+| mm (mm_top), rng black-boxed | 2 rn_mkgen | FAILED (method) | 77,008 | 1 port | 2,571 unverified (3 h cap) | 2,715 | 3 h |
+| **mm (mm_top), rng verified inside, rng .svf added** | - | **INCONCLUSIVE** | 78,038 | **0** | **3,451 unverified** (3 h cap), 0 aborted | 2,720 (+3 ref DFF1X) | 3 h 9 min |
+| mm, Formality hierarchical verification | per sub-block | __MMHIER__ |
 | seq (ct_seq + ct_dma) | - | **SUCCEEDED** | 8,942 | 0 | 0 / 0 | 206 | 76 s |
 | axil (top_axil) | - | **SUCCEEDED** | 89 | 0 | 0 / 0 | 0 | 8 s |
 | chip (top_chip) | 6 units | **SUCCEEDED** | 6,918 (6,484 black-box pins, 434 ports) | 0 | 0 / 0 | 0 | 19 s |
@@ -204,7 +206,14 @@ chip is covered exactly once.
   no RTL counterpart; they are absorbed by the clock-gate hold mode. No reference point is unmatched.
 - Rejected guidance: change_names / rename_design entries of the block-prefix renaming that the netlist reader
   resolves by name anyway; verification succeeds, so they are harmless (Formality's own note).
-__FMMM__
+- **mm is not proven.** First run (rn_mkgen black-boxed): 1 failing point, `mk_req_ready[1]`; DC propagated a
+  constant output of rn_mkgen NCORE 9 (`ph == PLAST` is always true for 9 cores) out of the child, which a black
+  box cannot represent, so this is a limitation of the black-box method, not a design difference. Second run
+  (rn_mkgen verified inside mm without its own .svf): 87 failing rn_mkgen registers, all register merges recorded
+  only in the child's .svf. Third run (child .svf added): **0 failing, 78,038 passing, 3,451 unverified at the 3 h
+  cap** (all in the 8 read ports `mm_rdport`: request queue `q_a` 1,770, response FIFO `u_mf/mem` 472, `q_n`
+  413, `q_br` 354, `rq_lo` 180, `q_v` 64). Status: **INCONCLUSIVE, 3,451 unverified points**; not a pass.
+  The 3 unmatched reference points are constant-1 registers DC removed (OPT-1206).
 
 ## 6. Integrity
 
