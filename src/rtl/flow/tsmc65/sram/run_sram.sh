@@ -40,11 +40,22 @@ for b in $ORDER; do
             [ $w = 0 ] && echo "WAIT_IDLE $b $(date +%H:%M:%S)"; w=1; sleep 300
         done
     fi
+    # T65_RSS_CAP=<GB> (P8e under the PI's shared-server rule): start a block only when the box's total resident memory
+    # plus the block's expected need (T65_NEED_<block> GB, default 4; gm16 13) stays within the cap
+    if [ -n "${T65_RSS_CAP:-}" ]; then
+        nv=T65_NEED_$b; need=${!nv:-4}; [ "$b" = gm16 ] && need=${!nv:-13}
+        w=0
+        while :; do
+            used=$(ps -eo rss= | awk '{ s += $1 } END { printf "%d", s / 1048576 }')
+            [ $((used + need)) -le "$T65_RSS_CAP" ] && break
+            [ $w = 0 ] && echo "WAIT_RSS $b used ${used} GB need ${need} GB cap $T65_RSS_CAP $(date +%H:%M:%S)"; w=1; sleep 120
+        done
+    fi
     echo "START $b $(date +%H:%M:%S)"
     mkdir -p "$out"; rm -f "$out/design.txt" "$out/summary.txt"
     (
         export T65_ROOT=$ROOT T65_BLOCK=$b T65_PERIOD=$P T65_CORNER=$C T65_TOPO=${T65_TOPO:-1} T65_OUT=$out
-        export T65_CORES=${T65_CORES:-4} T65_FP=0
+        cv=T65_CORES_$b; export T65_CORES=${!cv:-${T65_CORES:-4}} T65_FP=0
         mode=""; [ "$T65_TOPO" = 1 ] && mode=-topographical_mode
         cd "$out" || exit 1
         /usr/bin/time -v -o "$out/time.txt" tcsh -f -c \
