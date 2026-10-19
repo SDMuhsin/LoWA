@@ -70,6 +70,10 @@ foreach b $blocks {
     set f [dict get $bdir $b]/$b.spef
     if {![file exists $f]} { puts "T65_NOTE no spef for $b"; continue }
     if {$b eq $top} {
+        # T65_PT_TOP_SPEF=0: skip the top's own SPEF.  The chip run's topographical parasitics come from unplaced
+        # unit abstractions (OPT-1442) and also cover nets inside the units, where they would override the units'
+        # own SPEF; top_chip has no cells, so nothing of its own is lost.
+        if {![envd T65_PT_TOP_SPEF 1]} { puts "T65_NOTE top spef skipped"; continue }
         if {[catch {read_parasitics -format spef $f} e]} { incr nparf; puts "T65_NOTE spef $b: $e" } else { incr npar }
         continue
     }

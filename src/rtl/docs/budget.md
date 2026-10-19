@@ -24,6 +24,11 @@ Clock: the adder alone is 26.2 ns at ss, so a single-cycle FMA would be ~60 ns. 
 ss_125C_3v00**, the point the prior chip closed on this flow. SRAM (17.1 ns min period) is not the limit.
 33-40 MHz looks reachable but is not claimed before P2 measures the FMA stages.
 
+**Clock after P8 (TSMC 65 nm, docs/p8_report.md): 5.25 ns = 190.5 MHz at ss 0.9 V 125 C** (pre-layout, R14 /
+R15 exit rule: the vector unit closes 5.25 ns, not 5.0 ns; the 4.0 ns target of R12 was not met). At that clock
+the full16 step is 3,290.6 M cycles = **17.3 s** (`budget.py --fmhz 190.476`), with the 256-bit AXI port at
+32 B / cycle = 6.10 GB/s. The 25 MHz numbers in this file are the GF180 plan (P0) and are kept for reference.
+
 ## 2. Chosen PE count: 16 x 16 = 256 (parameterised R, C, V, lambda)
 
 | config | PEs | step @ L=128 (overlapped / serial) | DRAM peak | macros (KiB) | logic mm2 | core mm2 |
