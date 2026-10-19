@@ -151,11 +151,22 @@ their bank / lane / PE children are the 4.0 ns runs).  The macro variant's child
 | lw | latch RF | 1.281 | 0.727 | 0.554 | +0.0007 | -0.0013 | DC, this phase |
 | lw | macro | **0.771** | 0.225 | 0.545 | +0.0016 | -0.090 | DC, this phase |
 | vu16 | latch RF | 4.298 | 2.316 | 1.982 | 0.000 | -0.0011 | P8d |
-| vu16 | macro | (running) estimate **2.774** | 0.793 | 1.982 | - | - | estimate: latch logic + 38 macro banks |
+| vu16 | macro | **2.691** | 0.793 | 1.898 | **-0.510** (TNS -178, 533 endpoints) | -0.0084 | DC, this phase |
 | gm16 | latch RF | 11.167 | 5.845 | 5.321 | 0.000 | -0.0055 | P8d |
 | gm16 | macro | (running) estimate **6.984** | 1.662 | 5.321 | - | - | estimate: latch logic + 32 x 256 + 32 x 512 macro banks |
 
-The estimates (labelled) assume the units' non-memory logic is unchanged.  lw supports this: its logic is
+vu16 macro variant: it misses 5.25 ns by 0.51 ns, while P8d's latch run meets it.  The violating groups are
+mostly the unit-spanning paths that P8c / P8c2 already saw in vu16 at earlier clocks:
+- lane output buffer -> writer `u_wr/lane_ob_reg` (237 endpoints, -0.51 ns; 4.16 ns in the lane, 1.33 in the writer);
+- lane `sfo_cnt` -> sequencer `u_seq` state (about 140 endpoints, -0.51 ns, 4.84 ns of top-level wire).
+P8d's own vu16 runs moved between -1.11 ns (5.0) and met (5.25) on these paths, so DC-topographical run-to-run
+placement spread is of this size.  One group is caused by the macros: column-vector bank -> broadcast register
+`b_cv*_reg` (24 endpoints, -0.46 ns).  4.45 ns of that path is inside the bank abstraction: the macro output and
+adapter mux drive the 16-lane broadcast, and as a dont_touch child the bank cannot be re-buffered by the parent.
+The latch RF's q register has the same structure but a flop clock-to-q instead of a ~1.0 ns macro access.  DC power
+(ss, default vectorless): 120.6 mW, leakage 16.9 mW.
+
+The gm16 estimate (labelled) assumes the units' non-memory logic is unchanged.  lw supports this: its logic is
 0.554 mm2 with latch banks and 0.545 mm2 with macros.  DC power of lw at ss (DC default vectorless, both variants
 through the same wrapper): latch 26.5 mW (leakage 8.0), macro 22.8 mW (leakage 5.0).  The lw macro variant has more
 pre-layout hold violations (456 endpoints, worst -0.09 ns, total -10.8 ns).  The summary does not name the paths; the likely source (not verified) is the
