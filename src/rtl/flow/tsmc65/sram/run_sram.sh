@@ -41,12 +41,12 @@ for b in $ORDER; do
         done
     fi
     # T65_RSS_CAP=<GB> (P8e under the PI's shared-server rule): start a block only when the box's total resident memory
-    # plus the block's expected need (T65_NEED_<block> GB, default 4; gm16 13) stays within the cap
+    # (used memory, free -g) plus the block's expected need (T65_NEED_<block> GB, default 4; gm16 13) stays within the cap
     if [ -n "${T65_RSS_CAP:-}" ]; then
         nv=T65_NEED_$b; need=${!nv:-4}; [ "$b" = gm16 ] && need=${!nv:-13}
         w=0
         while :; do
-            used=$(ps -eo rss= | awk '{ s += $1 } END { printf "%d", s / 1048576 }')
+            used=$(free -g | awk '/^Mem/ { print $3 }')   # used memory (a sum of RSS counts shared pages repeatedly)
             [ $((used + need)) -le "$T65_RSS_CAP" ] && break
             [ $w = 0 ] && echo "WAIT_RSS $b used ${used} GB need ${need} GB cap $T65_RSS_CAP $(date +%H:%M:%S)"; w=1; sleep 120
         done
