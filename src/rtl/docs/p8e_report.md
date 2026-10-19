@@ -153,7 +153,7 @@ their bank / lane / PE children are the 4.0 ns runs).  The macro variant's child
 | vu16 | latch RF | 4.298 | 2.316 | 1.982 | 0.000 | -0.0011 | P8d |
 | vu16 | macro | **2.691** | 0.793 | 1.898 | **-0.510** (TNS -178, 533 endpoints) | -0.0084 | DC, this phase |
 | gm16 | latch RF | 11.167 | 5.845 | 5.321 | 0.000 | -0.0055 | P8d |
-| gm16 | macro | (running) estimate **6.984** | 1.662 | 5.321 | - | - | estimate: latch logic + 32 x 256 + 32 x 512 macro banks |
+| gm16 | macro | **6.661** | 1.662 | 4.999 | +0.0001 (met) | -0.053 (1,134 endpoints) | DC, this phase (the labelled estimate, latch logic + macro banks, was 6.984) |
 
 vu16 macro variant: it misses 5.25 ns by 0.51 ns, while P8d's latch run meets it.  The violating groups are
 mostly the unit-spanning paths that P8c / P8c2 already saw in vu16 at earlier clocks:
@@ -166,8 +166,10 @@ adapter mux drive the 16-lane broadcast, and as a dont_touch child the bank cann
 The latch RF's q register has the same structure but a flop clock-to-q instead of a ~1.0 ns macro access.  DC power
 (ss, default vectorless): 120.6 mW, leakage 16.9 mW.
 
-The gm16 estimate (labelled) assumes the units' non-memory logic is unchanged.  lw supports this: its logic is
-0.554 mm2 with latch banks and 0.545 mm2 with macros.  DC power of lw at ss (DC default vectorless, both variants
+Non-memory logic hardly changes with the memory type: lw 0.554 -> 0.545 mm2, vu16 1.982 -> 1.898, gm16 5.321 ->
+4.999 mm2 (gm16's latch children are 4.0 ns runs, so its PEs are slightly larger).  gm16 meets 5.25 ns with macros
+(worst macro-output path +0.0005 ns, macro-input +2.03 ns); DC power at ss 535 mW (leakage 42.9 mW); peak DC memory
+5.2 GB.  DC power of lw at ss (DC default vectorless, both variants
 through the same wrapper): latch 26.5 mW (leakage 8.0), macro 22.8 mW (leakage 5.0).  The lw macro variant has more
 pre-layout hold violations (456 endpoints, worst -0.09 ns, total -10.8 ns).  The summary does not name the paths; the likely source (not verified) is the
 macros' input hold requirements at the ff corner.  Pre-layout hold is left to layout in both variants, as in P8d.
