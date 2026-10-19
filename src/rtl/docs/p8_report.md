@@ -1,7 +1,7 @@
 # P8 report: LoWA-TA on TSMC 65 nm, through synthesis (P8a-P8d)
 
 Phase P8 (PLAN R11-R16) ports the full16 configuration of LoWA-TA (16 x 16 FP32 FMA PEs, 16-lane vector
-unit, LoWA engine, memory system, sequencer) to TSMC 65 nm GP standard cells (tcbn65gplus) and takes it through
+unit, LoWA engine, memory system, sequencer) to TSMC 65 nm GP standard cells (RVT) and takes it through
 logic synthesis, formal equivalence and pre-layout timing / power. This report closes P8 (phase P8d, R15). It
 is pre-layout only: there is no floorplan, placement, clock tree or routing (section 8).
 
@@ -289,26 +289,27 @@ Energy per full-size step (17.3 s): __ENERGY__
 
 ## 8. Full-size training step at the chip clock
 
-`python3 docs/calc/budget.py --fmhz 129.032` (full16, 12 layers, B 32, L 128, CLS-pruned):
+`python3 docs/calc/budget.py --fmhz 181.818` (full16, 12 layers, B 32, L 128, CLS-pruned):
 
 | quantity | value |
 |---|---|
 | step cycles (GEMM / vector / LoWA overlapped) | **3,290.6 M** (GEMM 2,777.9 M, vector 506.7 M, LoWA 261.8 M, optimiser + misc 6.0 M; serial 3,552.4 M) |
-| step time at the chip clock, 7.75 ns | **25.5 s** overlapped, 27.5 s serial (`--fmhz 129.032`) |
-| step time at the unit-level 5.25 ns / at R12's 4.0 ns | 17.3 s / 13.2 s |
-| DRAM port | 256-bit AXI4 at the core clock = 32 B / cycle = **4.13 GB/s** peak at 129.0 MHz (6.10 GB/s at 190.5 MHz); the model charges GEMM at 0.993 and vector ops at 0.548 of it (P6a / P6b measured) |
-| DRAM traffic per step | 95.95 GB; average demand 3.76 GB/s, GEMM-phase peak 4.13 GB/s (at 129.0 MHz) |
+| **step time at the chip clock, 5.5 ns (181.8 MHz)** | **18.1 s** overlapped, 19.5 s serial |
+| step time without the mm fix (7.75 ns) / unit-level 5.25 ns / R12's 4.0 ns | 25.5 s / 17.3 s / 13.2 s |
+| DRAM port | 256-bit AXI4 at the core clock = 32 B / cycle = **5.82 GB/s** peak at 181.8 MHz; the model charges GEMM at 0.993 and vector ops at 0.548 of it (P6a / P6b measured) |
+| DRAM traffic per step | 95.95 GB; average demand **5.30 GB/s**, GEMM-phase peak 5.82 GB/s |
 
 - The cycle count does not depend on the clock because the DRAM model scales with it (32 B per core cycle); a
-  DRAM that delivers less than 4.1 GB/s at 129 MHz would make the GEMM phases DRAM-bound.
-- **Cycle deltas of the P8c / P8c2 repairs** (measured on the unit and e2e tests, docs/p8c_report.md,
-  docs/p8c2_report.md): GEMM ops +1 to +2 cycles per op (P8c) and 0 (P8c2); vector ops +1 per op, real_smax
-  +24,574 per forward softmax (P8c2 writer register), real_gnorm +9; e2e reduced step +3,066 (P8c) and -376
-  (P8c2). For the full step that is about +0.04 M (P8c) + 0.30 M (P8c2) = **+0.34 M cycles, +0.01 %** of
-  budget.py's 3,290.6 M. (The P8c / P8c2 reports quoted +0.03 % / +0.24 % against a ~123 M-cycle base; against the
-  full step the effect is 0.01 %.) budget.py does not model these per-op constants; the step time above
-  therefore excludes them (25.502 s -> 25.505 s at 7.75 ns).
-- docs/budget.md now states the clock (section 1).
+  DRAM that delivers less than 5.8 GB/s at 182 MHz would make the GEMM phases DRAM-bound.
+- **Cycle deltas of the timing repairs** (measured on the unit and e2e tests; docs/p8c_report.md,
+  docs/p8c2_report.md, docs/p8f_report.md): P8c: GEMM ops +1 to +2 cycles per op, vector ops a few cycles per
+  phase, e2e reduced step +3,066 (+0.030 %). P8c2: GEMM 0, vector ops +1 per op, real_smax +24,574 per forward
+  softmax (writer register), real_gnorm +9; e2e reduced step -376. P8f (mm skid buffers): e2e reduced step
+  -0.002 %, integration cases -2,047 ... +6 cycles. For the full step that is about +0.04 M (P8c) + 0.30 M (P8c2)
+  - ~0.07 M (P8f, its e2e -0.002 % scaled to the full step) = **about +0.3 M cycles, +0.01 %** of budget.py's 3,290.6 M. (The P8c / P8c2 reports quoted
+  +0.03 % / +0.24 % against a ~123 M-cycle base; against the full step it is 0.01 %.) budget.py does not model
+  these per-op constants; they change the step time by less than 2 ms.
+- docs/budget.md states the clock (section 1).
 
 ## 9. Limitations (honest list)
 
