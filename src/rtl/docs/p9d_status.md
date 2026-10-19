@@ -30,3 +30,7 @@
 - GPU vs RTL directly (check_rtl.py on make test-e2e-full's dumps, 12 layers, B 2 x L 32, 2 chained steps):
   24/24 result tensors bit-exact, losses 0.785167277 / 0.230305105.
 - Epoch 0 dev: chip-forward eval and fp32 PyTorch eval give identical predictions on all 408 pairs.
+
+## 2026-10-19 23:40 UTC: DONE
+- All 5 seeds finished 30 epochs (23:13 UTC). Chip-exact median acc 87.75 / F1 91.23 (paper GPU 87.50 / 91.04).
+- 18 in-run MRPC steps checked against L1 (incl. s 1000, 2000, 3449): all bit-exact. Report: docs/p9d_report.md.
