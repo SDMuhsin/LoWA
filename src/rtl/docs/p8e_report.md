@@ -176,7 +176,7 @@ macros are accessed at the rate the control logic implies, not 50 %):
 |---|---|---|---|
 | lw | 35.0 / 5.55 | **25.9 / 3.22** | this phase (P8d: 35.2 / 5.73) |
 | vu16 | 103.5 / 18.9 | **76.9 / 11.1** | P8d `ptu_vu16_tt_vectorless` |
-| gm16 | 364.8 / 51.0 | (pending) | P8d `ptu_gm16_tt_vectorless` |
+| gm16 | 364.8 / 51.0 | **328.7 / 28.1** | P8d `ptu_gm16_tt_vectorless` |
 
 Non-memory logic hardly changes with the memory type: lw 0.554 -> 0.545 mm2, vu16 1.982 -> 1.898, gm16 5.321 ->
 4.999 mm2 (gm16's latch children are 4.0 ns runs, so its PEs are slightly larger).  gm16 meets 5.25 ns with macros
