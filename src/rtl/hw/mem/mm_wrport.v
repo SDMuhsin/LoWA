@@ -1,6 +1,7 @@
 `default_nettype none
 // mm_wrport: one engine write channel (wr of gm_top, vu_top, lw_top) on the AXI4 master.
-// Client side: a beat = byte address (4-byte aligned, any 32-byte offset) + 8 words + an 8-bit word mask;
+// Client side (P8f: the head of mm_top's request skid buffer, mm_skid; wr_ready is mm_top internal): a beat = byte
+// address (4-byte aligned, any 32-byte offset) + 8 words + an 8-bit word mask;
 // word j goes to addr / 4 + j when mask[j].  Writes are posted: the beat is accepted into stage A.
 // Stage A splits the beat into the AXW-word AXI lines it touches (1 or 2 for 256 bit), one per cycle,
 // lines with no masked word are dropped.  Stage B keeps one pending line (later beats to the same line
@@ -24,7 +25,7 @@ module mm_wrport #(
     /* verilator lint_on UNUSEDSIGNAL */
     input  wire [255:0]       wr_data,
     input  wire [7:0]         wr_mask,
-    input  wire               blk,           // incoming beat overlaps a pending read (mm_top)
+    input  wire               blk,           // the offered beat (head of mm_top's skid buffer) must wait (mm_top)
     input  wire               flush,
     output wire               aw_valid,
     input  wire               aw_ready,

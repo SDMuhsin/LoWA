@@ -12,11 +12,10 @@
 // Ordering (docs/p6a_report.md section 2): every accepted request stays in the pending queue (2^RQL
 // entries, word range [lo, hi]) until its last beat has arrived; mm_top blocks overlapping writes
 // against these entries and blocks this port's next request with `blk` while it overlaps a pending write.
-// P8c timing (PLAN R13): a request is first taken into the request register (rq_*), which is free when empty
-// or when its request moves into the pending queue this cycle, so req_ready depends on registers only (no
-// req_addr -> req_ready path through the RAW compare).  The RAW check (`blk`) is made on the registered request,
-// and mm_top's WAR check of the write channels sees it (rq_v / rq_lo / rq_len), so the order point of a read is
-// its acceptance into the request register.  Cost: +1 cycle from request to AR; one request per cycle as before.
+// P8c timing (PLAN R13) / P8f (PLAN R17): the request register is mm_top's skid buffer (mm_skid, registered
+// req_ready toward the engine); this port receives the buffer's head (req_*, registers) and takes it into the
+// pending queue when there is room and the RAW check (`blk`, mm_top) passes; req_ready here is that take signal
+// (combinational, mm_top internal).  The order point of a read is its acceptance into the skid buffer.
 module mm_rdport #(
     parameter AXL = 3,                       // log2 words per AXI beat (1, 2, 3 = 64, 128, 256 bit)
     parameter RFL = 5,                       // log2 return FIFO depth in AXI beats (>= 4)
@@ -24,19 +23,14 @@ module mm_rdport #(
 ) (
     input  wire               clk,
     input  wire               rst_n,
-    input  wire               req_valid,
-    output wire               req_ready,
-    /* verilator lint_off UNUSEDSIGNAL */   // [1:0]: word-aligned addresses
-    input  wire [31:0]        req_addr,
-    /* verilator lint_on UNUSEDSIGNAL */
+    input  wire               req_valid,     // head of mm_top's request skid buffer (registered)
+    output wire               req_ready,     // the head is taken into the pending queue this cycle
+    input  wire [29:0]        req_lo,        // word address
     input  wire [6:0]         req_len,
     output reg                dat_valid,
     input  wire               dat_ready,
     output reg  [255:0]       dat,
-    input  wire               blk,           // registered request overlaps a pending write (mm_top)
-    output reg                rq_v,          // request register (to mm_top's RAW / WAR checks)
-    output reg  [29:0]        rq_lo,         // its word address
-    output reg  [6:0]         rq_len,
+    input  wire               blk,           // the request overlaps a pending or older buffered write (mm_top)
     output wire               ar_valid,
     input  wire               ar_ready,
     output wire [29-AXL:0]    ar_line,       // AXI beat index (byte address >> (AXL + 2))
@@ -60,8 +54,8 @@ module mm_rdport #(
     reg  [6:0]      q_n  [0:RQ-1];
     reg  [5:0]      q_br [0:RQ-1];           // beats still to arrive
     reg  [RQL:0]    q_cnt, q_sp;             // entries, index of the entry being split
-    wire [29:0]     in_a  = rq_lo;
-    wire [6:0]      in_n  = rq_len;
+    wire [29:0]     in_a  = req_lo;
+    wire [6:0]      in_n  = req_len;
     wire [AXL-1:0]  in_o  = in_a[AXL-1:0];
     /* verilator lint_off UNUSEDSIGNAL */   // low bits: offset within the last beat
     wire [7:0]      in_ow = {{(8-AXL){1'b0}}, in_o} + {1'b0, in_n} - 8'd1;
@@ -70,13 +64,8 @@ module mm_rdport #(
     /* verilator lint_on UNUSEDSIGNAL */
     wire [RQL:0]    q_tail;
     wire            meta_rdy;
-    wire            acc = rq_v && (q_cnt != RQ[RQL:0]) && meta_rdy && !blk;   // request register -> queue
-    assign req_ready = !rq_v || acc;
-    always @(posedge clk) begin
-        if (!rst_n) rq_v <= 1'b0;
-        else if (req_ready) rq_v <= req_valid;
-        if (req_ready && req_valid) begin rq_lo <= req_addr[31:2]; rq_len <= req_len; end
-    end
+    assign req_ready = (q_cnt != RQ[RQL:0]) && meta_rdy && !blk;
+    wire            acc = req_valid && req_ready;                                // skid head -> queue
     wire            arrive_last = r_valid && (q_br[0] == 6'd1);
     assign q_tail = q_cnt - {{RQL{1'b0}}, arrive_last};
     genvar gi;
@@ -168,7 +157,12 @@ module mm_rdport #(
     wire            last_in = (c_in == rem_cur);
     wire [4:0]      tot = {1'b0, hc} + c_in[4:0];
     wire            flush = mf_v && !pk_first && (rem_in == 7'd0) && (hc != 4'd0);
-    wire            o_free = !dat_valid || dat_ready;
+    // P8f (PLAN R17): output skid entry (sk_*) behind the `dat` register, so the packer advances on a registered
+    // condition (o_free = skid entry empty) instead of on the engine's dat_ready; dat_ready only moves the skid
+    // entry into `dat` (one beat per cycle, no added latency: a beat goes to `dat` whenever it is free or leaves)
+    reg             sk_v;
+    reg  [255:0]    sk_d;
+    wire            o_free = !sk_v;
     wire            take = mf_v && rf_v && o_free && !flush;
     wire            emit = take && (tot >= 5'd8 || last_in);
     assign rf_pop = take;
@@ -190,32 +184,39 @@ module mm_rdport #(
     end
     always @(posedge clk) begin
         if (!rst_n) begin
-            dat_valid <= 1'b0; hc <= 4'd0; pk_first <= 1'b1; rem_in <= 7'd0;
+            hc <= 4'd0; pk_first <= 1'b1; rem_in <= 7'd0;
         end else begin
-            if (dat_valid && dat_ready) dat_valid <= 1'b0;
             if (flush && o_free) begin
-                dat_valid <= 1'b1;
                 hc <= 4'd0; pk_first <= 1'b1;
             end else if (take) begin
                 rem_in   <= rem_cur - c_in;
                 pk_first <= last_in && tot <= 5'd8;
-                if (emit) begin
-                    dat_valid <= 1'b1;
-                    hc <= (tot > 5'd8) ? tot[3:0] - 4'd8 : 4'd0;
-                end else hc <= tot[3:0];
+                if (emit) hc <= (tot > 5'd8) ? tot[3:0] - 4'd8 : 4'd0;
+                else hc <= tot[3:0];
             end
         end
     end
     // datapath (no reset).  A flush emits comb too: with pk_first = 0 its words 0 .. hc-1 are hold[0 .. hc-1]
-    // and the rest are past the request's length (don't-care), so `dat` has one data source and one load
-    // enable (fanout: the enable and the hold select each drive 256 flops, docs/p6a_report.md section 5)
-    wire ld_dat = emit || (flush && o_free);
+    // and the rest are past the request's length (don't-care), so a beat has one data source (comb)
+    wire ld_dat = emit || (flush && o_free);                  // a beat is emitted (only while the skid entry is empty)
+    wire d_free = !dat_valid || dat_ready;                    // `dat` is empty or leaves this cycle
     always @(posedge clk) begin
-        if (ld_dat)
-            for (md = 0; md < 8; md = md + 1) dat[32*md +: 32] <= comb[md];
+        if (!rst_n) begin
+            dat_valid <= 1'b0; sk_v <= 1'b0;
+        end else if (d_free) begin
+            dat_valid <= sk_v || ld_dat; sk_v <= 1'b0;
+        end else if (ld_dat) sk_v <= 1'b1;
+    end
+    always @(posedge clk) begin
+        if (d_free) begin
+            if (sk_v) dat <= sk_d;
+            else if (ld_dat)
+                for (md = 0; md < 8; md = md + 1) dat[32*md +: 32] <= comb[md];
+        end else if (ld_dat)
+            for (md = 0; md < 8; md = md + 1) sk_d[32*md +: 32] <= comb[md];
         if (take)
             for (md = 0; md < 8; md = md + 1) hold[md] <= emit ? comb[md+8] : comb[md];
     end
-    assign idle = !rq_v && (q_cnt == {(RQL+1){1'b0}}) && !mf_v && !dat_valid;
+    assign idle = (q_cnt == {(RQL+1){1'b0}}) && !mf_v && !dat_valid && !sk_v;
 endmodule
 `default_nettype wire

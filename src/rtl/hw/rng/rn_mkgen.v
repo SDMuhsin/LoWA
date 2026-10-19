@@ -29,7 +29,7 @@ module rn_mkgen #(
     input  wire [3:0]     site,
     input  wire [3:0]     layer,
     input  wire           mk_req_valid,
-    output wire           mk_req_ready,
+    output reg            mk_req_ready,   // registered (P8f, PLAN R17): = (ph == PLAST)
     input  wire [31:0]    mk_req_idx,
     output reg            mk_rsp_valid,
     output reg  [MKW-1:0] mk_rsp_keep,
@@ -57,7 +57,9 @@ module rn_mkgen #(
     // ---------------------------------------------------------------- issue: phase ph = 0 .. NSEQ-1
     reg  [3:0]  ph;
     reg  [7:0]  po;                          // ph * NCORE
-    assign mk_req_ready = (ph == PLAST);
+    // P8f (PLAN R17): mk_req_ready is a flop holding (ph == PLAST), loaded with the next phase's value, so mm_top's
+    // mk port has no combinational output (same value in every cycle as before, no cycle change)
+    wire [3:0]  ph_n = !mk_req_valid ? ph : (mk_req_ready ? 4'd0 : ph + 4'd1);
     wire        fire = mk_req_valid && mk_req_ready;
     reg         v_s0, last_s0, odd_s0;
     reg  [3:0]  ph_s0;
@@ -65,12 +67,14 @@ module rn_mkgen #(
     reg  [31:0] t_s0;                        // (idx >> 1) + k0
     always @(posedge clk) begin
         if (!rst_n) begin
-            ph <= 4'd0; po <= 8'd0; v_s0 <= 1'b0;
+            ph <= 4'd0; po <= 8'd0; v_s0 <= 1'b0; mk_req_ready <= (PLAST == 4'd0);
         end else begin
             v_s0 <= mk_req_valid;
+            mk_req_ready <= (ph_n == PLAST);
             if (mk_req_valid) begin
-                if (mk_req_ready) begin ph <= 4'd0; po <= 8'd0; end
-                else begin ph <= ph + 4'd1; po <= po + NC8; end
+                ph <= ph_n;
+                if (mk_req_ready) po <= 8'd0;
+                else po <= po + NC8;
             end
         end
         last_s0 <= mk_req_ready; odd_s0 <= mk_req_idx[0]; ph_s0 <= ph; po_s0 <= po;
