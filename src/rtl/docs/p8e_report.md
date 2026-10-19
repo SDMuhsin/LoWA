@@ -166,6 +166,15 @@ adapter mux drive the 16-lane broadcast, and as a dont_touch child the bank cann
 The latch RF's q register has the same structure but a flop clock-to-q instead of a ~1.0 ns macro access.  DC power
 (ss, default vectorless): 120.6 mW, leakage 16.9 mW.
 
+Unit power, PrimePower vectorless at tt (the P8d method; activity propagated from the unit inputs, so the
+macros are accessed at the rate the control logic implies, not 50 %):
+
+| unit | latch RF total / leakage mW | macro total / leakage mW | source of the latch value |
+|---|---|---|---|
+| lw | 35.0 / 5.55 | **25.9 / 3.22** | this phase (P8d: 35.2 / 5.73) |
+| vu16 | 103.5 / 18.9 | **76.9 / 11.1** | P8d `ptu_vu16_tt_vectorless` |
+| gm16 | 364.8 / 51.0 | (pending) | P8d `ptu_gm16_tt_vectorless` |
+
 Non-memory logic hardly changes with the memory type: lw 0.554 -> 0.545 mm2, vu16 1.982 -> 1.898, gm16 5.321 ->
 4.999 mm2 (gm16's latch children are 4.0 ns runs, so its PEs are slightly larger).  gm16 meets 5.25 ns with macros
 (worst macro-output path +0.0005 ns, macro-input +2.03 ns); DC power at ss 535 mW (leakage 42.9 mW); peak DC memory
