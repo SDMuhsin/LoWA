@@ -1,0 +1,14 @@
+# P9b gate-level power windows: name  stimulus  first_cycle  end_cycle   (cycles from the start of the cut op, t0)
+# stimulus l1 = the whole one-step program (cut 0), c<k> = tb/power/mk_cut_stim.py --cut <k>.  Ops of the reduced
+# step (1 layer, B 2, L 32), unit-op index: op name, RTL duration in cycles.
+g_qkv     c3   2000  42000    # 3  GEMM M64 N768 K768, LoWA merge on (Q projection), 158,939
+g_ffn1    c11  2000  42000    # 11 GEMM M64 N3072 K768, GELU epilogue (FFN1 forward), 651,280
+g_ffn1b   c32  2000  42000    # 32 GEMM M64 N3072 K768 (FFN backward), 652,000
+v_emb     l1   2000  32000    # 0  VEC EMB (embedding + LayerNorm), 130,177
+v_smax    c7   1000  41000    # 7  VEC SMAX_FWD, 51,163
+v_ln      c10  1000  41000    # 10 VEC LN_FWD, 56,373
+v_lnb     c30  1000  41000    # 30 VEC LN_BWD, 96,672
+v_smaxb   c40  1000  31000    # 40 VEC SMAX_BWD, 34,638
+v_gnorm   c48  1000  41000    # 48 GNORM GN_ROWS, 191,831
+l_sg      c44  2000  62000    # 44 LOWA_SG (sampled coefficient gradient), 179,920
+o_adamw   c53  6000  106000   # 55 ADAMW of the head (starts 4,992 cycles after the cut op 53), 5,329,393
