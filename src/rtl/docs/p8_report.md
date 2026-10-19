@@ -18,10 +18,10 @@ numbers are in the repository.
 | standard-cell area (ss netlists, cells only) | **18.04 mm2**, of which **8.89 mm2** latch register file (37,376 words, 146 KiB) |
 | leaf cells / flops / latches | 5,189,049 / 420,535 / 1,196,032 (+ 37,376 word ICGs, + DC clock gates) |
 | setup, PrimeTime on the complete chip netlist, ss 5.5 ns | **WNS 0, 0 violators**; worst flop endpoint +0.131 ns (seq > vu, accepted by the PI); without the mm fix -2.27 ns at 5.25 and closed at 7.75 |
-| setup at tt / ff | __PTTTFF__ |
-| hold (pre-CTS, ideal clocks, informative) | __PTHOLD__ |
+| setup at tt / ff, 5.5 ns | 0 violators at both; worst flop endpoint +1.026 ns (tt) / +1.186 ns (ff) |
+| hold (pre-CTS, ideal clocks, informative) | ss / tt: 0 violators; ff: 6,011 endpoints between -0.0053 ns and 0 (TNS -6.47 ns), left to hold fixing in place and route (section 4.3) |
 | Formality, RTL vs netlist | __FMSUM__ |
-| average power, tt 1.0 V 25 C, 181.8 MHz | __POWER__ |
+| average power, tt 1.0 V 25 C, 181.8 MHz | **0.475 W** vectorless, flat chip (toggle 0.1, static probability 0.5; leakage 0.081 W); **0.60 W** with RTL SAIF of real workloads for gm16 / vu16 (upper-side, section 7); about 8.6-10.8 J per training step |
 | full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 18.1 s** at 181.8 MHz (DRAM: 256-bit AXI = 5.82 GB/s peak, 5.30 GB/s average demand); 25.5 s without the mm fix (7.75 ns) |
 
 __SUMMARY_NOTES__
@@ -300,9 +300,29 @@ default rates; every unit input is driven by the propagated activity of the unit
 | u_seq / u_axil | 0.0001 | 0.0007 | 0.0003 | 0.0011 |
 | **chip** | **0.0345** | **0.2447** | **0.0816** | **0.361** (clock network 0.218) |
 
-**(b) RTL SAIF from VCS (real workload, bounded).** __SAIFSECTION__
+**(b) RTL SAIF from VCS (real workload, bounded).** VCS S-2021.09 simulated two existing unit testbenches on real cases at RTL, with the tsmc65 latch-RF backend (MM_TECH=2,
+behavioural clock gate). `tb/power/saif_ctl.sv` is a second top module; the testbenches are unchanged. It records the
+DUT's toggles for the first 200,000 cycles (reset, descriptor, operand loads and the steady state of the op):
+gm_top on **real_dgelu** (M 256, N 3,072, K 768 GEMM with the GELU-backward epilogue) and vu_top on **real_ln_fwd**
+(LayerNorm forward on real model data, 2.67 M cycles in full). The op is cut off after 200 k cycles, so the testbench's own result
+checks do not run. Two transformations make the SAIF readable by PrimeTime 2019, which has no RTL name mapping
+(sim/run_saif.sh). First, generate-block scopes are renamed as DC names them (`g_lane[0].u_lane -> g_lane_0__u_lane`).
+Second, durations are rescaled from the 40 ns testbench clock to the 5.5 ns chip clock, one testbench cycle per chip
+cycle (sim/saif_scale.py). Annotation: **100 % of the unit inputs**, 10.5 % (gm) / 10.6 % (vu) of the sequential
+outputs and 8.2 % / 7.6 % of all nets carry SAIF activity. The rest, including the latch-RF arrays (VCS does not dump
+memories), is propagated by PrimePower from those nets. Unit netlists, tt, 5.5 ns:
 
-Energy per full-size step (17.3 s): __ENERGY__
+| unit (workload) | switching W | internal W | leakage W | total W | vectorless, same unit in the flat chip |
+|---|---|---|---|---|---|
+| gm16 (real_dgelu GEMM) | 0.0697 | 0.2925 | 0.0509 | **0.413** (clock network 0.234) | 0.337 |
+| vu16 (real_ln_fwd) | 0.0333 | 0.0805 | 0.0192 | **0.133** (clock network 0.054) | 0.086 |
+
+**Chip estimate with SAIF where measured:** gm16 0.413 + vu16 0.133 (SAIF) + lw 0.031 + mm 0.020 + seq 0.0015
+(flat-chip vectorless, 5.5 ns) = **0.60 W** at tt, 181.8 MHz. This adds the GEMM and the vector unit each at its
+own busy activity; in a training step they overlap only partly (budget.py: GEMM 2,778 M of the 3,291 M cycles,
+vector 507 M), so 0.60 W is an upper-side "both busy" figure. The vectorless flat-chip figure is 0.475 W.
+
+Energy per full-size step (18.1 s at 5.5 ns): **about 8.6 J** with the vectorless chip power (0.475 W) and **at most about 10.8 J** with the SAIF-based estimate (0.60 W), pre-layout and without the clock tree.
 
 ## 8. Full-size training step at the chip clock
 
@@ -366,7 +386,10 @@ Per the PI, the headline clock of both variants is 5.5 ns. The macro variant's c
   chip-level DC timing is not usable (OPT-1442, section 4.1). Chip-level timing comes from PrimeTime on the flat
   netlist, with block-level SPEF estimates stitched per instance; inter-unit wires at chip level are not estimated
   beyond the 20 % IO budget each unit was constrained with.
-- **Power** is pre-layout: no clock tree (ideal clock nets), estimated wires, __POWERLIM__
+- **Power** is pre-layout: no clock tree (ideal clock nets, so clock-tree buffer power is missing while the
+  register clock pins are counted), estimated wires, ss RC at tt. The vectorless figures depend on the stated
+  toggle rates. The SAIF figures cover two unit workloads over 200 k-cycle windows, with about 10 % of the
+  sequential outputs annotated directly and the rest (latch-RF arrays included) propagated.
 - **test-e2e-full was not re-run after the P8c / P8c2 repairs.** The repairs were checked bit-exact with lint,
   test-unit and the reduced test-e2e (P8c / P8c2 reports); the 12-layer e2e (5 h) last ran before them.
 - **tsmc65-backend simulations skipped** (P8a, R12): real_ffn1_256 and one real_ln_fwd sensitivity row on the
