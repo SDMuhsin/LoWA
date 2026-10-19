@@ -126,7 +126,7 @@ Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
 | tt / ff, 5.25 ns | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
 | **ss, 5.5 ns, with P8f mm (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.131** (seq > vu) | +0.050 [0] |
 | **tt, 5.5 ns, with P8f mm** | 0 / 0 [0] | +1.026 | +0.016 [0] |
-| **ff, 5.5 ns, with P8f mm** | __CHIPFF55__ |
+| **ff, 5.5 ns, with P8f mm** | 0 / 0 [0] | +1.186 | -0.0053 / -6.47 [6,011] (**pre-CTS, informative; fixed by hold buffering in P&R**, 4.3) |
 | ss, 7.75 ns, without the mm fix | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
 | tt, 7.75 ns, without the mm fix | 0 / 0 [0] | +3.076 | +0.016 [0] |
 | ff, 7.75 ns, without the mm fix | 0 / 0 [0] | +3.436 | -0.0053 / -6.47 [6,012] (**pre-CTS, informative; fixed by hold buffering in P&R**, 4.3) |
@@ -199,9 +199,10 @@ chip is covered exactly once.
 | bank256_lw / bank512_lw / bank768_lw | - | **SUCCEEDED** | 8,544 / 16,992 / 25,440 | 0 | 0 / 0 | 2 each | 18-98 s |
 | lw (lw_top) | 6 banks | **SUCCEEDED** | 37,175 | 0 | 0 / 0 | 1,073 | 262 s |
 | rng9 / rng3 (rn_mkgen) | - | **SUCCEEDED** | 1,474 / 747 | 0 | 0 / 0 | 1 / 4 | 93 / 42 s |
-| mm (mm_top), rng black-boxed | 2 rn_mkgen | FAILED (method) | 77,008 | 1 port | 2,571 unverified (3 h cap) | 2,715 | 3 h |
-| **mm (mm_top), rng verified inside, rng .svf added** | - | **INCONCLUSIVE** | 78,038 | **0** | **3,451 unverified** (3 h cap), 0 aborted | 2,720 (+3 ref DFF1X) | 3 h 9 min |
-| mm, Formality hierarchical verification | per sub-block | __MMHIER__ |
+| mm without the fix (P8d), rng black-boxed | 2 rn_mkgen | FAILED (method) | 77,008 | 1 port | 2,571 unverified (3 h cap) | 2,715 | 3 h |
+| mm without the fix (P8d), rng verified inside, rng .svf added | - | **INCONCLUSIVE** | 78,038 | **0** | **3,451 unverified** (3 h cap), 0 aborted | 2,720 (+3 ref DFF1X) | 3 h 9 min |
+| **mm with P8f (design of record at 5.5 ns), rng verified inside** | - | **INCONCLUSIVE** | 77,815 | **0** | **8,748 unverified** (3 h cap), 0 aborted | 2,905 | 3 h |
+| mm with P8f, Formality hierarchical verification | per sub-block | __MMHIER__ |
 | seq (ct_seq + ct_dma) | - | **SUCCEEDED** | 8,942 | 0 | 0 / 0 | 206 | 76 s |
 | axil (top_axil) | - | **SUCCEEDED** | 89 | 0 | 0 / 0 | 0 | 8 s |
 | chip (top_chip) | 6 units | **SUCCEEDED** | 6,918 (6,484 black-box pins, 434 ports) | 0 | 0 / 0 | 0 | 19 s |
