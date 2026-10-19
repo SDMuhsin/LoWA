@@ -140,7 +140,27 @@ vectorless power) times the bank counts:
 | of which leakage, mW | 35.4 | 6.7 | 0.19 |
 | bank setup slack at ss, ns | 0.000 (met) | >= +1.60 | |
 
-UNITS_PLACEHOLDER
+### 6.1 Units at 5.25 ns, ss (DC topographical; banks linked as block abstractions, as in P8d)
+
+Unit area = own cells + children (`unit_area_um2` of the summary); memory = the units' mm_sram_bank instances.
+Latch lw was rerun through the same wrapper; latch vu16 / gm16 are P8d's 5.25 ns unit runs (`hier_<unit>_p5.25`,
+their bank / lane / PE children are the 4.0 ns runs).  The macro variant's children are all compiled at 5.25 ns.
+
+| unit | variant | unit area mm2 | memory mm2 | logic mm2 | setup WNS ns | hold WNS ns (pre-layout) | source |
+|---|---|---|---|---|---|---|---|
+| lw | latch RF | 1.281 | 0.727 | 0.554 | +0.0007 | -0.0013 | DC, this phase |
+| lw | macro | **0.771** | 0.225 | 0.545 | +0.0016 | -0.090 | DC, this phase |
+| vu16 | latch RF | 4.298 | 2.316 | 1.982 | 0.000 | -0.0011 | P8d |
+| vu16 | macro | (running) estimate **2.774** | 0.793 | 1.982 | - | - | estimate: latch logic + 38 macro banks |
+| gm16 | latch RF | 11.167 | 5.845 | 5.321 | 0.000 | -0.0055 | P8d |
+| gm16 | macro | (running) estimate **6.984** | 1.662 | 5.321 | - | - | estimate: latch logic + 32 x 256 + 32 x 512 macro banks |
+
+The estimates (labelled) assume the units' non-memory logic is unchanged.  lw supports this: its logic is
+0.554 mm2 with latch banks and 0.545 mm2 with macros.  DC power of lw at ss (DC default vectorless, both variants
+through the same wrapper): latch 26.5 mW (leakage 8.0), macro 22.8 mW (leakage 5.0).  The lw macro variant has more
+pre-layout hold violations (456 endpoints, worst -0.09 ns), which are paths into the macro pins with the macro's
+hold requirement.  Hold is fixed after placement in both variants (P8d also leaves pre-layout hold to layout).
+
 
 ## 7. Limitations
 
