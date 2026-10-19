@@ -132,6 +132,13 @@ module tb_top_gls;
             a_rbeat = 0; a_wbeat = 0; a_c0 = cyc;
         end
     endtask
+    // signature of the DRAM write stream (every accepted W beat: data and strobes), for the RTL / netlist comparison
+    reg [63:0] wsig = 64'd0;
+    longint nwb = 0;
+    always @(posedge clk) if (m_wvalid && m_wready) begin
+        wsig <= {wsig[62:0], wsig[63]} ^ m_wdata[63:0] ^ m_wdata[127:64] ^ m_wdata[191:128] ^ m_wdata[255:192] ^ {32'd0, m_wstrb} ^ {32'd0, m_awaddr};
+        nwb <= nwb + 1;
+    end
     reg [7:0] gm_err_q = 0;
     reg [1:0] mm_err_q = 0;
     always @(posedge clk) begin
@@ -142,7 +149,7 @@ module tb_top_gls;
     end
     integer hb = 100000;
     always @(posedge clk) if (hb > 0 && cyc % hb == 0 && cyc > 0) begin
-        $display("HB cyc %0d busy %b", cyc, u_chip.unit_busy);
+        $display("HB cyc %0d busy %b wbeats %0d wsig %h", cyc, u_chip.unit_busy, nwb, wsig);
         $system("date +HBWALL_%s");
         $fflush();
     end
@@ -151,8 +158,8 @@ module tb_top_gls;
     reg [1023:0] fwin;
     reg [8*256-1:0] wname;
     longint w0, w1;
-    integer fw, rcw, nwin = 0;
-    reg [8*300-1:0] sname;
+    integer fw, rcw, nwin = 0, fchk;
+    string sname, scmd;           // $toggle_report takes the file name as a string (a reg vector is rejected)
     initial begin
         if ($value$plusargs("saifwin=%s", fwin)) begin
             $set_gate_level_monitoring("on");
@@ -165,10 +172,12 @@ module tb_top_gls;
                 $display("SAIF_START %0s cyc %0d", wname, cyc); $fflush();
                 while (cyc < t0 + w1) @(posedge clk);
                 $toggle_stop;
-                $sformat(sname, "%0s.saif", wname);
+                sname = $sformatf("%0s.saif", wname);
                 $toggle_report(sname, 1.0e-9, "tb_top_gls.u_chip");
                 $toggle_reset;
-                $sformat(sname, "touch %0s.saif.ok", wname); $system(sname);
+                fchk = $fopen(sname, "r");
+                if (fchk == 0) $display("SAIF_FAILED %0s not written", sname);
+                else begin $fclose(fchk); scmd = $sformatf("touch %0s.saif.ok", wname); $system(scmd); end
                 nwin = nwin + 1;
                 $display("SAIF_WRITTEN %0s cycles %0d %0d", wname, w0, w1); $system("date +HBWALL_%s"); $fflush();
                 rcw = $fscanf(fw, "%s %d %d\n", wname, w0, w1);
@@ -182,7 +191,7 @@ module tb_top_gls;
 
     // ------------------------------------------------------------------ main (host script, as tb_top)
     always @(posedge clk) if (cyc >= maxcyc || (stopcyc > 0 && cyc >= stopcyc)) begin
-        $display("STOP tb_top_gls cycle %0d (busy %b)", cyc, u_chip.unit_busy);
+        $display("STOP tb_top_gls cycle %0d (busy %b) wbeats %0d wsig %h", cyc, u_chip.unit_busy, nwb, wsig);
         if (fop != 0) $fclose(fop);
         $finish;
     end

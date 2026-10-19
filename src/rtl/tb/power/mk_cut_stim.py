@@ -10,8 +10,9 @@ The interpreter (sw/interp.py) executes every descriptor before op k on the init
 written here holds exactly the data those ops produce (activations, gradients, scalars); the program keeps its
 SETCSR descriptors and replaces every other descriptor before op k (unit ops, LOOP, FENCE) by NOPs, slot for
 slot.  An event flag set by a skipped op and still pending at the cut is dropped from its first consumer's WAIT
-(that op issues as soon as its unit is free, as it would once the producer had retired).  Only valid at --layers 1
-(the layer loop runs once and the term registers are 0 throughout, as after reset).  Writes dram.reg, dram.bin,
+(that op issues as soon as its unit is free, as it would once the producer had retired).  The cut must lie
+after the layer loops (every kept descriptor is checked to decode to the same fields with the reset term values; e.g.
+layer 0's backward at --layers 2) or inside the one-iteration loop of --layers 1.  Writes dram.reg, dram.bin,
 host.txt (one step: CSRs, doorbell, IRQ wait, ack) and ops.txt (op index, pc, name of the kept unit ops)."""
 import argparse
 import os
@@ -39,7 +40,6 @@ def main():
     ap.add_argument("--cut", type=int, required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    assert a.layers == 1
     c = CP.Cfg(a.layers, a.batch, a.seq)
     r = CP.compile_all(c)
     inp, s0, img, cs = r["inp"], int(r["inp"]["step_s"]), r["img"], r["csr"]
@@ -101,12 +101,30 @@ def main():
         pc = nxt
         if loop is not None and pc == loop["end"]:
             loop["left"] -= 1
-            assert loop["left"] == 0, "cut inside the layer loop: only --layers 1"
-            loop = None
-    # inside the (one-iteration) layer loop the chip, its LOOP descriptor replaced by a NOP, runs the rest of the body
-    # once, straight through, with the terms at their reset values, as the loop would
-    assert loop is None or (loop["left"] == 1 and m.term[isa.T_LIDX] == 0), "cut inside a multi-iteration loop"
-    assert all(t == 0 for t in m.term[:14]), "terms must be at their reset values at the cut"
+            if loop["left"] > 0:
+                sgn = -1 if loop["dir"] else 1
+                m.term[isa.T_LIDX] += sgn
+                for q in range(1, 13):
+                    m.term[q] = (m.term[q] + sgn * m.str[q]) & 0xFFFFFFFF
+                pc = loop["start"]
+            else:
+                loop = None
+    # inside a loop: only the one-iteration layer loop of --layers 1 (the chip, its LOOP descriptor replaced by a NOP,
+    # runs the rest of the body once, straight through, with the terms at their reset values, as the loop would)
+    assert loop is None or (loop["left"] == 1 and all(t == 0 for t in m.term[:14])), "cut inside a multi-iteration loop"
+    # after the loops the chip's terms are at their reset values (0; STEP / SLOT from the CSRs) while the
+    # interpreter's need not be: every kept descriptor must decode to the same fields with both
+    t_rst = [0] * 16
+    t_rst[isa.T_STEP], t_rst[isa.T_SLOT] = m.term[isa.T_STEP], m.term[isa.T_SLOT]
+    p3 = pc
+    while True:
+        h3 = isa.header(int(m.mem[p3 // 4]))
+        w3 = m.mem[p3 // 4:p3 // 4 + 16 * h3["nsl"]]
+        d_int, d_rst = isa.decode_words(w3, m.term), isa.decode_words(w3, t_rst)
+        assert str(d_int[2]) == str(d_rst[2]) and str(d_int[3]) == str(d_rst[3]), f"descriptor at {p3:#x} uses loop terms"
+        if isa.OPNAME[h3["op"]] == "END":
+            break
+        p3 += 64 * h3["nsl"]
     # kept ops: drop pending flags from their first consumer
     ops, kk, p2 = [], a.cut, pc
     while True:
