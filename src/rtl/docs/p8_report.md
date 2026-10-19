@@ -16,7 +16,7 @@ numbers are in the repository.
 |---|---|
 | chip clock | **5.25 ns (190.5 MHz) at ss 0.9 V 125 C** (exit rule R14 / R15: vu16 misses 4.75 and 5.0 ns, closes 5.25 ns) |
 | standard-cell area (ss netlists, cells only) | **18.05 mm2**, of which **8.89 mm2** latch register file (37,376 words, 146 KiB) |
-| leaf cells / flops / latches | __CELLS__ / 415,461 / 1,196,032 (+ 37,376 word ICGs, + DC clock gates) |
+| leaf cells / flops / latches | 5,211,998 / 415,461 / 1,196,032 (+ 37,376 word ICGs, + DC clock gates) |
 | setup, PrimeTime on the complete chip netlist | __PTSS__ |
 | setup at tt / ff | __PTTTFF__ |
 | hold (pre-CTS, ideal clocks, informative) | __PTHOLD__ |
@@ -64,7 +64,7 @@ latch count exactly.
 | ctrl, ct_seq + ct_dma | seq (4.0) | 13,065 | 0.063 | 0 | 6,203 | 0 |
 | ctrl, top_axil | axil (4.0) | 22 | 0.0001 | 0 | 2 | 0 |
 | top_chip glue | chip (5.25) | 0 | 0 | 0 | 0 | 0 |
-| **chip** | | **__CELLS__** | **18.046** | **8.891** | **415,461** | **1,196,032** |
+| **chip** | | **5,211,998** | **18.046** | **8.891** | **415,461** | **1,196,032** |
 
 - The latch RF (R11a: no usable SRAM compiler) is 49 % of the cell area. Per word: 32 latches, a write-data
   register share and a word ICG; ~238 um2 per word (bank512: 121,710 um2 / 512).
@@ -93,7 +93,7 @@ Method: each unit's netlist is read together with the netlists of every block it
 PEs, lanes, banks and mask generators are all present), each block's DC topographical parasitics (ss RC estimate)
 are annotated on every instance of that block (321 SPEF reads in gm16; 0 failures), clocks are ideal, and the SDC
 is the DC one (5.25 ns, 0.25 ns setup / 0.05 ns hold uncertainty, IO 20 %) regenerated per corner. tt and ff
-reuse the ss RC estimate. The chip run reads all 18 netlists (__CHIPCELLS__ leaf cells).
+reuse the ss RC estimate. The chip run reads all 17 netlists (5,211,998 leaf cells).
 
 Per unit (complete netlist, 5.25 ns). WNS / TNS in ns, violating endpoints in brackets; "flop" = worst endpoint
 that is a flop or output (latch-RF endpoints borrow and sit at 0).

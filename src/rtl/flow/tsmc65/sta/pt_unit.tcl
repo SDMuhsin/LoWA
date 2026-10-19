@@ -92,6 +92,22 @@ foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Total|.*\|\s*[0-9]+\s*\|
 close $r
 puts $fh "leaf_cells [sizeof_collection [get_cells -quiet -hierarchical -filter is_hierarchical==false]]"
 t65_put_timing $fh
+# the worst paths split by top-level instance (arrival spent in each instance along the path, ns)
+proc t65_path_top {p} {
+    set s ""; set prev 0.0; set cur ""; set acc 0.0
+    foreach_in_collection pt [get_attribute $p points] {
+        set a [get_attribute $pt arrival]; set c [split [get_object_name [get_attribute $pt object]] /]
+        set k [expr {[llength $c] > 1 ? [lindex $c 0] : "top"}]
+        if {$k ne $cur && $cur ne ""} { append s [format " %s %.2f >" $cur $acc]; set acc 0.0 }
+        set cur $k; set acc [expr {$acc + $a - $prev}]; set prev $a
+    }
+    if {$cur ne ""} { append s [format " %s %.2f" $cur $acc] }
+    return $s
+}
+set i 0
+foreach_in_collection q [get_timing_paths -delay_type max -max_paths 3 -nworst 1] {
+    incr i; puts $fh "worst_split $i [t65_path_line $q] |[t65_path_top $q]"
+}
 # worst setup / hold slack per unit instance (endpoints inside the instance) and at the top level
 set regd [all_registers -data_pins]
 set units [get_cells -quiet -filter is_hierarchical==true]
