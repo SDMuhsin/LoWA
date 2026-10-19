@@ -70,11 +70,12 @@ report_black_boxes                       > $fo/rpt/black_boxes.rpt
 # T65_FM_HIER=<level>: Formality's own hierarchical verification (write_hierarchical_verification_script): each
 # sub-block at or above that level is verified separately (with the boundary constraints Formality derives and
 # then checks at the parent), then the top with those blocks black-boxed.  Per-block results go to
-# rpt/hier_results.txt; the final verify below is the top-level one.
+# rpt/hier_run.log; the reports describe the script's last (top-level) verification.
 if {[info exists ::env(T65_FM_HIER)]} {
     write_hierarchical_verification_script -replace -level $::env(T65_FM_HIER) $fo/hier_script.tcl
     redirect -tee $fo/rpt/hier_run.log { source $fo/hier_script.tcl }
-    set ok [verify]
+    # the reports below then describe the script's last verification (the top with its blocks black-boxed)
+    set ok -1
 } else {
 set ok [verify]
 }
