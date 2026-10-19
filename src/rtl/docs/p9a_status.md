@@ -21,3 +21,13 @@
   layers) to validate the composition. Composer: tb/top/chunks.py.
 - Speed per single-thread sim under the current load: ~1.2-1.5 k cycles/s; the longest chunk is ~42 M cycles, so ETA
   for the full-size numbers ~06:00-08:00 UTC (freeze 12:00).
+
+## 2026-10-19 21:45 UTC
+- Reduced (B 2, L 32) chunks all done. Composed 1-layer step 10,359,261 cycles vs 10,359,455 in situ (pre-P8f log):
+  -194 (-0.002 %, the size of the P8f change). Shared ops simulated at the end of one chunk and the start of the next:
+  equal or +2 cycles (5 boundaries).
+- Found: the tail (GNORM over the coefficient gradients, coefficient AdamW) grows with the number of LoWA modules
+  (+~7.2 k cycles per layer at any shape); it is not in the 1-layer + 11 x body formula. Taken from the in-situ
+  12-layer reduced run (running, current RTL) minus the 1-layer one; shape independence checked by comparing the
+  full-size and reduced tail chunks op by op.
+- Full-size chunks: 3-9 h to go (ETA 01:00-06:30 UTC).
