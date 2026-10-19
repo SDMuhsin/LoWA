@@ -14,15 +14,15 @@ numbers are in the repository.
 
 | item | result |
 |---|---|
-| chip clock | **5.25 ns (190.5 MHz) at ss 0.9 V 125 C** (exit rule R14 / R15: vu16 misses 4.75 and 5.0 ns, closes 5.25 ns) |
+| chip clock | **7.75 ns (129.0 MHz) at ss 0.9 V 125 C, chip level** (PLAN R17). Unit-level closure: 5.25 ns (R14 / R15 exit rule: vu16 misses 4.75 and 5.0 ns, closes 5.25 ns); the flat chip misses 5.25 ns by 2.27 ns on cross-unit paths through mm_top's combinational ready outputs, and closes 7.75 ns (flop slack +0.229 ns) |
 | standard-cell area (ss netlists, cells only) | **18.05 mm2**, of which **8.89 mm2** latch register file (37,376 words, 146 KiB) |
 | leaf cells / flops / latches | 5,211,998 / 415,461 / 1,196,032 (+ 37,376 word ICGs, + DC clock gates) |
 | setup, PrimeTime on the complete chip netlist | __PTSS__ |
 | setup at tt / ff | __PTTTFF__ |
 | hold (pre-CTS, ideal clocks, informative) | __PTHOLD__ |
 | Formality, RTL vs netlist | __FMSUM__ |
-| average power, tt 1.0 V 25 C, 190.5 MHz | __POWER__ |
-| full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 17.3 s** at 190.5 MHz (DRAM: 256-bit AXI = 6.10 GB/s peak, 5.55 GB/s average demand) |
+| average power, tt 1.0 V 25 C, 129.0 MHz | __POWER__ |
+| full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 25.5 s** at 129.0 MHz (DRAM: 256-bit AXI = 4.13 GB/s peak, 3.76 GB/s average demand); 17.3 s at the unit-level 5.25 ns |
 
 __SUMMARY_NOTES__
 
@@ -45,7 +45,10 @@ changes. P8d re-ran the candidates on a clean disk quota (P8c2's 5.0 ns run had 
   abstractions are fixed, dont_touch netlists; how far DC topographical places the writer from them, and so the
   wire estimate on those pins, changes from run to run with the constraint. The result at 5.0 ns repeated
   exactly in two runs (P8c2, P8d), so it is not noise of one run.
-- So the chip clock is **5.25 ns**. gm16, the second limiter (-0.0095 ns at 4.0 ns), closes 5.25 ns in one run.
+- So the **unit-level** closed period is **5.25 ns**. gm16, the second limiter (-0.0095 ns at 4.0 ns), closes 5.25 ns
+  in one run. The flat-chip PrimeTime run then shows cross-unit paths that the unit runs cannot see (section
+  4.2); per R17 the **chip clock is the chip-level closed period, 7.75 ns**. The units keep their netlists
+  (5.25 / 4.0 ns), which are tighter than 7.75 ns needs.
 - The units that closed 4.0 ns were not re-synthesised at 5.25 ns; their 4.0 ns netlists are used (tighter
   than needed). The chip-level PrimeTime run (section 4) times them all at 5.25 ns.
 
@@ -121,7 +124,9 @@ Chip (flat, all 17 netlists): **the chip does not meet 5.25 ns at ss.**
 | ss, 5.25 ns | **-2.272 / -569.9 [476]** | -2.272 | +0.050 [0] |
 | tt, 5.25 ns | __CHIPTT__ |
 | ff, 5.25 ns | __CHIPFF__ |
-| ss, 7.75 ns (check of the chip-level period) | __CHIP775__ |
+| **ss, 7.75 ns (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.229** | +0.050 [0] |
+| tt, 7.75 ns | __CHIPTT775__ |
+| ff, 7.75 ns | __CHIPFF775__ |
 
 Worst setup endpoint per unit (ss, 5.25 ns): u_gm -2.272 [11], u_mm -1.748 [41], u_lw -1.666 [419], u_vu -0.119
 [5], u_seq +1.205, u_axil +3.507. Every unit closes 5.25 ns in its own complete-netlist run (table above), so
@@ -212,7 +217,7 @@ mm_rdport; the P8c runs had been made in a work tree that no longer exists). A F
 exposed it (the P8c seed register missing). Both were rebuilt in P8d at 4.0 ns from the current RTL, with lw's
 three bank copies; every other block's run postdates its last RTL change (checked against `git log -- hw`).
 
-## 7. Power (PrimePower, average, tt, 190.5 MHz)
+## 7. Power (PrimePower, average, tt)
 
 Two methods, both stated per number. PrimePower (pt_shell, `power_analysis_mode averaged`) on the complete unit
 netlists of section 4.2 at tt (1.0 V, 25 C), with the ss RC estimate, ideal clocks, 5.25 ns.
@@ -239,24 +244,25 @@ Energy per full-size step (17.3 s): __ENERGY__
 
 ## 8. Full-size training step at the chip clock
 
-`python3 docs/calc/budget.py --fmhz 190.476` (full16, 12 layers, B 32, L 128, CLS-pruned):
+`python3 docs/calc/budget.py --fmhz 129.032` (full16, 12 layers, B 32, L 128, CLS-pruned):
 
 | quantity | value |
 |---|---|
 | step cycles (GEMM / vector / LoWA overlapped) | **3,290.6 M** (GEMM 2,777.9 M, vector 506.7 M, LoWA 261.8 M, optimiser + misc 6.0 M; serial 3,552.4 M) |
-| step time | **17.3 s** overlapped, 18.7 s serial (at R12's 4.0 ns it would have been 13.2 s) |
-| DRAM port | 256-bit AXI4 at the core clock = 32 B / cycle = **6.10 GB/s** peak; the model charges GEMM at 0.993 and vector ops at 0.548 of it (P6a / P6b measured) |
-| DRAM traffic per step | 95.95 GB; average demand 5.55 GB/s, GEMM-phase peak 6.10 GB/s |
+| step time at the chip clock, 7.75 ns | **25.5 s** overlapped, 27.5 s serial (`--fmhz 129.032`) |
+| step time at the unit-level 5.25 ns / at R12's 4.0 ns | 17.3 s / 13.2 s |
+| DRAM port | 256-bit AXI4 at the core clock = 32 B / cycle = **4.13 GB/s** peak at 129.0 MHz (6.10 GB/s at 190.5 MHz); the model charges GEMM at 0.993 and vector ops at 0.548 of it (P6a / P6b measured) |
+| DRAM traffic per step | 95.95 GB; average demand 3.76 GB/s, GEMM-phase peak 4.13 GB/s (at 129.0 MHz) |
 
 - The cycle count does not depend on the clock because the DRAM model scales with it (32 B per core cycle); a
-  DRAM that delivers less than 6.1 GB/s at 190 MHz would make the GEMM phases DRAM-bound.
+  DRAM that delivers less than 4.1 GB/s at 129 MHz would make the GEMM phases DRAM-bound.
 - **Cycle deltas of the P8c / P8c2 repairs** (measured on the unit and e2e tests, docs/p8c_report.md,
   docs/p8c2_report.md): GEMM ops +1 to +2 cycles per op (P8c) and 0 (P8c2); vector ops +1 per op, real_smax
   +24,574 per forward softmax (P8c2 writer register), real_gnorm +9; e2e reduced step +3,066 (P8c) and -376
   (P8c2). For the full step that is about +0.04 M (P8c) + 0.30 M (P8c2) = **+0.34 M cycles, +0.01 %** of
   budget.py's 3,290.6 M. (The P8c / P8c2 reports quoted +0.03 % / +0.24 % against a ~123 M-cycle base; against the
   full step the effect is 0.01 %.) budget.py does not model these per-op constants; the step time above
-  therefore excludes them (17.276 s -> 17.278 s).
+  therefore excludes them (25.502 s -> 25.505 s at 7.75 ns).
 - docs/budget.md now states the clock (section 1).
 
 ## 9. Limitations (honest list)
