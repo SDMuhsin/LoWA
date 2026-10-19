@@ -4,17 +4,17 @@
 #   (stays on the server); summary -> build/tsmc65/summary/fm_<block><tag>.txt.  Markers FM_DONE1 / FM_DONE.
 set -u
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
-for a in "$@"; do
+for a in "$@"; do  # T65_FM_TAG: summary-name suffix
     b=${a%%:*}; tag=""; [ "$a" != "$b" ] && tag=${a#*:}
     out=$ROOT/build/tsmc65/hier/$b$tag
     [ -f "$out/design.txt" ] || { echo "FM_SKIP $b$tag (not built)"; continue; }
-    fo=$ROOT/build/tsmc65/fm/$b$tag
+    fo=$ROOT/build/tsmc65/fm/$b$tag${T65_FM_TAG:-}
     mkdir -p "$fo" "$ROOT/build/tsmc65/summary"
     export T65_ROOT=$ROOT T65_BLOCK=$b T65_OUT=$out T65_FM_OUT=$fo T65_CORNER=${T65_CORNER:-ss}
     cd "$fo" || exit 1
     TIMEV=""; [ -x /usr/bin/time ] && TIMEV="/usr/bin/time -v -o $fo/time.txt"
     $TIMEV tcsh -f -c "source $ROOT/flow/tsmc65/common/env.csh; fm_shell -f $ROOT/flow/tsmc65/lec/fm_unit.tcl" > fm.log 2>&1
-    s=$ROOT/build/tsmc65/summary/fm_$b$tag.txt
+    s=$ROOT/build/tsmc65/summary/fm_$b$tag${T65_FM_TAG:-}.txt
     if [ -f summary.txt ]; then
         cp -f summary.txt "$s"
         [ -f time.txt ] && grep -E "Maximum resident|Elapsed" time.txt | sed 's/^\s*/time_/' >> "$s"

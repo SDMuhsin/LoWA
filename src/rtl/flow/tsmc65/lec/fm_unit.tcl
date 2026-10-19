@@ -29,8 +29,12 @@ set_svf $out/$block.svf
 
 read_db -technology_library [t65_db $corner]
 # ---- reference: the RTL DC read (same files, defines and site ICG wrapper)
+# T65_FM_FULL_KIDS (comma list): children verified inside this run instead of as black boxes (their netlists are
+# read in full).  Used for mm: rn_mkgen NCORE 9 has a constant mk_req_ready output that DC propagates out of the
+# child, which a black box cannot represent (a false failure of the black-box method, not a design difference).
+set fullk [split [string map {, " "} [expr {[info exists ::env(T65_FM_FULL_KIDS)] ? $::env(T65_FM_FULL_KIDS) : ""}]]]
 set bbm {}
-if {$abs} { foreach k $kids { lappend bbm [t65_hier $k module] } }
+if {$abs} { foreach k $kids { if {$k ni $fullk} { lappend bbm [t65_hier $k module] } } }
 set bbm [lsort -unique $bbm]
 set_app_var hdlin_interface_only [join $bbm " "]
 set defs [join [lmap d [t65_defines] {string cat "+define+" $d}] ""]
@@ -44,8 +48,9 @@ if {$abs} {
     set hroot [file dirname $out]
     foreach k $kids {
         set kd [t65_kid_dir $hroot $k]
-        set fh [open $kd/design.txt]; lappend bbi [string trim [read $fh]]; close $fh
         lappend ifiles $kd/$k.v
+        if {$k in $fullk} continue
+        set fh [open $kd/design.txt]; lappend bbi [string trim [read $fh]]; close $fh
     }
 }
 set_app_var hdlin_interface_only [join [lsort -unique $bbi] " "]
@@ -66,7 +71,7 @@ if {!$ok} { catch { analyze_points -failing > $fo/rpt/analyze.rpt } }
 
 # ---- summary (numbers and RTL point types only)
 set fs [open $fo/summary.txt w]
-puts $fs "block $block ref $mod impl $design corner $corner verify_return $ok black_box_children [join $bbm ,]"
+puts $fs "block $block ref $mod impl $design corner $corner verify_return $ok black_box_children [join $bbm ,] full_children [join $fullk ,]"
 set r [open $fo/rpt/status.rpt]
 foreach line [split [read $r] "\n"] {
     if {[regexp {(Verification|Passing|Failing|Aborted|Unverified|Not Compared|Unread|Unmatched|Matched|Compare Points|BBPin|DFF|LAT|Port|Cut|Total)} $line]} {
