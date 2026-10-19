@@ -3,11 +3,11 @@
 Phase P8 (PLAN R11-R16) ports the full16 configuration of LoWA-TA (16 x 16 FP32 FMA PEs, 16-lane vector
 unit, LoWA engine, memory system, sequencer) to TSMC 65 nm GP standard cells (RVT) and takes it through
 logic synthesis, formal equivalence and pre-layout timing / power. This report closes P8 (phase P8d, R15). It
-is pre-layout only: there is no floorplan, placement, clock tree or routing (section 8).
+is pre-layout only: there is no floorplan, placement, clock tree or routing (section 10).
 
 All numbers come from tool runs on the CMC server tau-03 (Synopsys DC W-2024.09-SP2 topographical, Formality
 and PrimeTime / PrimePower Q-2019.12-SP2, VCS S-2021.09) in the server checkout of the pushed commits named in
-section 9. Netlists, full reports, SAIF files and library data stay on the server; only scripts and summary
+section 11. Netlists, full reports, SAIF files and library data stay on the server; only scripts and summary
 numbers are in the repository.
 
 ## 1. Summary
@@ -20,11 +20,12 @@ numbers are in the repository.
 | setup, PrimeTime on the complete chip netlist, ss 5.5 ns | **WNS 0, 0 violators**; worst flop endpoint +0.131 ns (seq > vu, accepted by the PI); without the mm fix -2.27 ns at 5.25 and closed at 7.75 |
 | setup at tt / ff, 5.5 ns | 0 violators at both; worst flop endpoint +1.026 ns (tt) / +1.186 ns (ff) |
 | hold (pre-CTS, ideal clocks, informative) | ss / tt: 0 violators; ff: 6,011 endpoints between -0.0053 ns and 0 (TNS -6.47 ns), left to hold fixing in place and route (section 4.3) |
-| Formality, RTL vs netlist | __FMSUM__ |
+| Formality, RTL vs netlist | every block of the chip **SUCCEEDED** (0 failing, 0 unverified) except **mm: INCONCLUSIVE**: 0 failing points; hierarchically, all 42 mm sub-blocks pass and the mm top glue has __MMUNV__ unverified points at the cap (section 5) |
 | average power, tt 1.0 V 25 C, 181.8 MHz | **0.475 W** vectorless, flat chip (toggle 0.1, static probability 0.5; leakage 0.081 W); **0.60 W** with RTL SAIF of real workloads for gm16 / vu16 (upper-side, section 7); about 8.6-10.8 J per training step |
 | full-size training step (12 layers, B 32, L 128) | **3,290.6 M cycles = 18.1 s** at 181.8 MHz (DRAM: 256-bit AXI = 5.82 GB/s peak, 5.30 GB/s average demand); 25.5 s without the mm fix (7.75 ns) |
 
-__SUMMARY_NOTES__
+Numbers at the chip clock use P8f's mm netlist (section 9); "without the mm fix" rows use this phase's mm. All
+timing and power are pre-layout (no floorplan, ideal clocks, DC topographical wire estimates).
 
 ## 2. Chip clock
 
@@ -54,10 +55,9 @@ changes. P8d re-ran the candidates on a clean disk quota (P8c2's 5.0 ns run had 
   exactly in two runs (P8c2, P8d), so it is not noise of one run.
 - So the **unit-level** closed period is **5.25 ns**. gm16, the second limiter (-0.0095 ns at 4.0 ns), closes 5.25 ns
   in one run. The flat-chip PrimeTime run then shows cross-unit paths that the unit runs cannot see (section
-  4.2); per R17 the **chip clock is the chip-level closed period, 7.75 ns**. The units keep their netlists
-  (5.25 / 4.0 ns), which are tighter than 7.75 ns needs.
-- The units that closed 4.0 ns were not re-synthesised at 5.25 ns; their 4.0 ns netlists are used (tighter
-  than needed). The chip-level PrimeTime run (section 4) times them all at 5.25 ns.
+  4.2): 7.75 ns with this phase's mm, **5.5 ns with P8f's registered mm handshakes (the chip clock)**.
+- The units that closed 4.0 ns were not re-synthesised at 5.25 or 5.5 ns; their 4.0 ns netlists are used (tighter
+  than needed). The flat-chip PrimeTime runs time them all at the chip period.
 
 ## 3. Area
 
@@ -104,7 +104,8 @@ Method: each unit's netlist is read together with the netlists of every block it
 PEs, lanes, banks and mask generators are all present), each block's DC topographical parasitics (ss RC estimate)
 are annotated on every instance of that block (321 SPEF reads in gm16; 0 failures), clocks are ideal, and the SDC
 is the DC one (5.25 ns, 0.25 ns setup / 0.05 ns hold uncertainty, IO 20 %) regenerated per corner. tt and ff
-reuse the ss RC estimate. The chip run reads all 17 netlists (5,211,998 leaf cells).
+reuse the ss RC estimate. The chip runs read all 17 netlists (5,189,049 leaf cells with P8f's mm, 5,211,998
+without); the chip's own SPEF is skipped (it comes from the chip DC run with unplaced abstractions, 4.1).
 
 Per unit (complete netlist, 5.25 ns). WNS / TNS in ns, violating endpoints in brackets; "flop" = worst endpoint
 that is a flop or output (latch-RF endpoints borrow and sit at 0).
@@ -114,7 +115,7 @@ that is a flop or output (latch-RF endpoints borrow and sit at 0).
 | gm16 | 3,272,195 | **-0.0059 / -0.006 [1]** | -0.0059 | 0 (+0.776) | 0 (+0.936) | -0.0053 / -5.76 [5,337] |
 | vu16 | 1,221,897 | **-0.0228 / -0.025 [2]** | -0.0228 | 0 (+1.295) | 0 (+1.768) | -0.0015 / -0.54 [514] |
 | lw | 346,958 | 0 / 0 | +0.979 | 0 (+2.165) | 0 (+2.797) | -0.0015 / -0.12 [115] |
-| mm | 357,861 | +0.737 | +0.737 | +1.563 | +2.010 | -0.0014 / -0.02 [15] |
+| mm (P8d, without the fix) | 357,861 | +0.737 | +0.737 | +1.563 | +2.010 | -0.0014 / -0.02 [15] |
 | seq | 13,065 | +1.205 | +1.205 | +2.720 | +3.393 | -0.0016 / -0.03 [29] |
 | axil | 22 | +2.455 | +2.455 | +2.629 | +2.718 | +0.044 |
 
@@ -127,10 +128,10 @@ that is a flop or output (latch-RF endpoints borrow and sit at 0).
 
 Chip (flat, all 17 netlists). The rows "with P8f mm" use P8f's mm / rng9 / rng3 netlists and every other block as above. The rows "without the mm fix" use this phase's mm; **that chip does not meet 5.25 ns at ss**:
 
-| chip, flat (5,211,998 cells, 356 SPEF reads) | setup WNS / TNS (ns) [endpoints] | flop WNS | hold WNS [endpoints] |
+| chip, flat (17 netlists, 356 SPEF reads) | setup WNS / TNS (ns) [endpoints] | flop WNS | hold WNS [endpoints] |
 |---|---|---|---|
-| ss, 5.25 ns | **-2.272 / -569.9 [476]** | -2.272 | +0.050 [0] |
-| tt / ff, 5.25 ns | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
+| ss, 5.25 ns, without the mm fix | **-2.272 / -569.9 [476]** | -2.272 | +0.050 [0] |
+| tt / ff, 5.25 ns, without the mm fix | not run (stopped when R17 moved the chip clock to 7.75 ns) | | |
 | **ss, 5.5 ns, with P8f mm (chip clock)** | **0 / 0 [0]** (latch-RF endpoints borrow) | **+0.131** (seq > vu) | +0.050 [0] |
 | **tt, 5.5 ns, with P8f mm** | 0 / 0 [0] | +1.026 | +0.016 [0] |
 | **ff, 5.5 ns, with P8f mm** | 0 / 0 [0] | +1.186 | -0.0053 / -6.47 [6,011] (**pre-CTS, informative; fixed by hold buffering in P&R**, 4.3) |
@@ -179,8 +180,8 @@ cross-unit group with slack below 0.5 ns at 5.5 ns is seq > vu (17 endpoints).
 **All hold numbers here are pre-CTS and informative; they are not sign-off figures.** What they mean: with ideal
 clocks (zero skew, zero insertion delay) PrimeTime checks that data launched at a clock edge does not reach the
 capturing flop or latch before that same edge plus the 0.05 ns hold uncertainty, at the fast corner (ff 1.1 V
--40 C, where cells are fastest). The flat chip at 7.75 ns has **6,012 endpoints** at ff with negative hold slack
-(sum over units 6,010 in the unit runs), **all between -0.0053 ns and 0**, TNS -6.47 ns; they are short
+-40 C, where cells are fastest). The flat chip at 5.5 ns has **6,011 endpoints** at ff with negative hold slack
+(6,012 at 7.75 ns without the mm fix; sum over the unit runs 6,010), **all between -0.0053 ns and 0**, TNS -6.47 ns; they are short
 flop-to-flop hops (PE-to-PE operand and drain registers, bank write registers) whose data delay is a few ps below
 the 0.05 ns margin. No hold fixing was done (R13: no pre-CTS hold buffers). In place and route, the real clock tree
 replaces the ideal clock (its skew can make hold better or worse per path), and the router's hold-fixing step
@@ -212,7 +213,8 @@ chip is covered exactly once.
 | mm without the fix (P8d), rng black-boxed | 2 rn_mkgen | FAILED (method) | 77,008 | 1 port | 2,571 unverified (3 h cap) | 2,715 | 3 h |
 | mm without the fix (P8d), rng verified inside, rng .svf added | - | **INCONCLUSIVE** | 78,038 | **0** | **3,451 unverified** (3 h cap), 0 aborted | 2,720 (+3 ref DFF1X) | 3 h 9 min |
 | **mm with P8f (design of record at 5.5 ns), rng verified inside** | - | **INCONCLUSIVE** | 77,815 | **0** | **8,748 unverified** (3 h cap), 0 aborted | 2,905 | 3 h |
-| mm with P8f, Formality hierarchical verification | per sub-block | __MMHIER__ |
+| **mm with P8f, Formality hierarchical verification** (`write_hierarchical_verification_script -level 1`) | each sub-block in its own verification, then the top with the 42 sub-blocks black-boxed | **42 / 42 sub-blocks SUCCEEDED; top: INCONCLUSIVE** | top 8,328 | 0 | **13 unverified** (12 black-box pins, 1 DFF) at the 20 min per-verification cap | | 50 min |
+__MMHIER2__
 | rng9 / rng3, P8f netlists | - | **SUCCEEDED** | 1,499 / 748 | 0 | 0 / 0 | | 1-2 min |
 | seq (ct_seq + ct_dma) | - | **SUCCEEDED** | 8,942 | 0 | 0 / 0 | 206 | 76 s |
 | axil (top_axil) | - | **SUCCEEDED** | 89 | 0 | 0 / 0 | 0 | 8 s |
@@ -230,6 +232,13 @@ chip is covered exactly once.
   cap** (all in the 8 read ports `mm_rdport`: request queue `q_a` 1,770, response FIFO `u_mf/mem` 472, `q_n`
   413, `q_br` 354, `rq_lo` 180, `q_v` 64). Status: **INCONCLUSIVE, 3,451 unverified points**; not a pass.
   The 3 unmatched reference points are constant-1 registers DC removed (OPT-1206).
+- **P8f mm (the chip's mm).** Flat, rng verified inside with its .svf: 0 failing, 77,815 passing, 8,748 unverified
+  at the 3 h cap (read and write ports: `q_a` 1,920, `u_mf/mem` 1,760, write skid `s_d` / `h_d` 1,176 each,
+  `a_d` 559, `q_n` 448, ...). Hierarchical (Formality's `write_hierarchical_verification_script`, which verifies
+  each sub-block alone with boundary constraints that it then checks at the parent, and finally the top with the
+  sub-blocks black-boxed): **all 42 sub-blocks SUCCEEDED** (the 8 read ports, 4 write ports, 12 skid buffers, the
+  mask generators, FIFOs, ...); the remaining top-level glue verification left 13 points unverified at its 20 min
+  cap. __MMHIER2NOTE__ Status: **INCONCLUSIVE**; no failing point in any mm run.
 
 ## 6. Integrity
 
@@ -243,7 +252,8 @@ counts include one latch per word ICG, which DC maps to library ICG cells). DC c
 | gm16 | 181,373 | 182,774 | 99.2 % | 786,432 | 811,008 - 24,576 = 786,432 | 200 / 588 / 667 |
 | vu16 | 112,086 | 113,982 | 98.3 % | 311,296 | 321,024 - 9,728 = 311,296 | 347 / 44 / 22 |
 | lw | 36,806 | 38,150 | 96.5 % | 98,304 | 101,376 - 3,072 = 98,304 | 492 / 457 / 38 |
-| mm | 78,991 | 79,376 | 99.5 % | 0 | 0 | 31 / 256 / 0 |
+| mm, P8f (chip netlist) | 84,065 | 84,442 | 99.6 % | 0 | 0 | 31 / 272 / 0 |
+| mm, P8d (without the fix) | 78,991 | 79,376 | 99.5 % | 0 | 0 | 31 / 256 / 0 |
 | seq / axil | 6,203 / 2 | 6,214 / 2 (P8b) | 99.8 % | 0 | 0 | 132 / 2 / 7, 0 |
 
 Latch counts are exact (words x 32). The flop differences are registers DC reports as constant, unloaded or
@@ -251,7 +261,7 @@ merged (each removal has its OPT message; Formality's guidance accepts them).
 
 ### 6.2 Logs
 
-Every block run of the chip (gm16 and vu16 at 5.25 ns, all others at 4.0 ns):
+Every block run of the chip (gm16, vu16 and the P8f mm / rng9 / rng3 at 5.25 ns, all others at 4.0 ns):
 - latches inferred only in `mm_bank_t65` (`integ_latch_other 0`);
 - 0 unresolved references (LINK-5), 0 black boxes or unresolved lines in check_design;
 - 0 errors apart from the harmless PROC-3, except the chip run's 9: OPT-1442 (x8) and ABS-251, both about
@@ -406,7 +416,8 @@ Per the PI, the headline clock of both variants is 5.5 ns. The macro variant's c
 - **tsmc65-backend simulations skipped** (P8a, R12): real_ffn1_256 and one real_ln_fwd sensitivity row on the
   latch-RF backend (~10 h each in Verilator). The latch RF is covered by the --quick set, Formality of every
   bank, and the VCS power runs of section 7 (which simulate it, but do not check results).
-- The mm Formality run __MMLIM__
+- **mm Formality is INCONCLUSIVE**, not a pass: no failing point in any run, but unverified points remain at the 3 h
+  cap (flat) and in the top-level glue (hierarchical); see section 5.
 - Units that closed 4.0 ns were not re-synthesised at 5.25 ns (area / power slightly above a 5.25 ns synthesis).
 
 ## 11. Reproduction
