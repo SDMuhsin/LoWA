@@ -86,7 +86,7 @@ RF word ranges: 8-128 (mux 1), 16-256 (mux 2), 32-512 (mux 4).  HD-SRAM muxes: 8
 A 768-word bank could also be RF 512 + RF 256 (51,251 um2, 15 % smaller) with an address-split adapter.  Only two
 banks have this shape, so it was not done.
 
-Power per macro (`mc_power.py`, 200 MHz):
+Power per macro (`mc_power.py`; energies are per access and do not depend on the clock):
 
 | shape | leakage tt / ss, mW | read / write energy tt, pJ (liberty) | read / write energy tt, pJ (datatable) |
 |---|---|---|---|
