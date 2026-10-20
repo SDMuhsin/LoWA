@@ -8,6 +8,10 @@ full-size training step.
 
 ## 1. Results
 
+**Headline (tt, 181.8 MHz, pre-layout):** GEMM phase **0.86 W**, vector phase **0.43 W**, idle floor 0.39 W.
+Full-size training step on P9a's measured schedule (3,880.4 M cycles, 21.34 s): **16.4 J, 0.77 W average**. On
+budget.py's schedule (18.1 s): 14.4 J, 0.80 W. Efficiency: 107.7 GFLOP/s/W peak, 88 GFLOP/J over the measured step.
+
 **What was obtained: the preferred method, at window level.**
 - The switching activity is a zero-delay gate-level VCS simulation of the complete synthesized chip (all 17
   netlists of the 5.5 ns flat-chip run). It runs the compiled training program on real data, and the gate-level
@@ -25,8 +29,7 @@ full-size training step.
 |---|---|---|
 | **GEMM** | Q-projection with LoWA merge 0.868, K 0.867, O 0.872, FFN2 0.871, FFN1 + GELU 0.873; backward dX (2-layer, dense gradients): FFN2-dX 0.867, FFN1-dX 0.874, O-dX 0.868; attention scores 0.726 | **0.864 W** (full-size MAC mix: forward dense 32 %, FFN1 16 %, backward dX 47 %, attention 4.5 %) |
 | **vector** | SMAX_FWD 0.433, LN_FWD 0.450, SMAX_REC 0.432, SMAX_BWD 0.418, LN_BWD 0.427 (dense gradients); also EMB 0.419, GN_ROWS 0.435 | **0.433 W** (full-size vector-cycle mix of budget.py) |
-| **LoWA** (LOWA_SG, beside the GEMMs) | LOWA_SG alone 0.403 W, where the LoWA engine (u_lw) draws 0.042 W vs 0.025 W idle. Measured overlapped (window gl2_sgacc: LOWA_SG beside GEMM_ACC2, 2-layer layer-1 backward): chip 0.564 W, u_lw 0.042 W, u_gm 0.428 W, the same as the sparse-gradient GEMM alone (0.435; layer 1 is the last layer, so its backward sees
-CLS-only gradients). So the engine adds the same +0.017 W beside a GEMM | **+0.017 W** on top of the GEMM phase while it runs |
+| **LoWA** (LOWA_SG, beside the GEMMs) | LOWA_SG alone 0.403 W, where the LoWA engine (u_lw) draws 0.042 W vs 0.025 W idle. Measured overlapped (window gl2_sgacc: LOWA_SG beside GEMM_ACC2, 2-layer layer-1 backward): chip 0.564 W, u_lw 0.042 W, u_gm 0.428 W, the same as the sparse-gradient GEMM alone (0.435; layer 1 is the last layer, so its backward sees CLS-only gradients). So the engine adds the same +0.017 W beside a GEMM | **+0.017 W** on top of the GEMM phase while it runs |
 | **optimiser** (ADAMW) | 0.396 | **0.396 W** |
 | all engines idle (floor) | ICG clock pins 0.30 W (ideal clock, every cycle) + leakage 0.082 W | about 0.39 W |
 
@@ -46,7 +49,7 @@ CLS-only gradients). So the engine adds the same +0.017 W beside a GEMM | **+0.0
 ### 1.2 Energy per training step (full size: 12 layers, B 32, L 128)
 
 E = P_GEMM t_GEMM + P_vec t_vec + P_opt t_opt + dP_LoWA t_LoWA, with **phase times from budget.py** (docs/p8_report.md
-section 8; P9a's measured cycles were not available at the time of writing, see 1.3):
+section 8; the same with P9a's measured schedule follows the table):
 
 | phase | cycles | time at 181.8 MHz | power | energy |
 |---|---|---|---|---|
@@ -62,7 +65,7 @@ section 8; P9a's measured cycles were not available at the time of writing, see 
   its cycles), which at full size is 0.2 % of the step.
 
 **With P9a's measured schedule** (docs/p9a_report.md; numbers from P9a's composition file `p9a_full.json` of
-03:39 UTC, before P9a's report was final): `tb/power/p9b_energy_p9a.py` puts every op of P9a's full-size chunks (B 32,
+03:39 UTC; the same numbers as P9a's report of 03:43 UTC, section 1): `tb/power/p9b_energy_p9a.py` puts every op of P9a's full-size chunks (B 32,
 L 128, their op logs) at its window's power.
 - Model: power = idle floor (0.3865 W) + the sum over the running ops of (window power - floor). Additivity was
   checked on the one overlap the program has (LoWA SG beside GEMM_ACC2, 1.1).
@@ -80,7 +83,7 @@ L 128, their op logs) at its window's power.
 | average power | **0.77 W** | 0.80 W |
 | step-average efficiency | 2 x 673.7 G useful MACs / 16.4 J = **82 GFLOP/J** (2 x 722.0 G MACs as executed, unpruned: 88 GFLOP/J) | 93 GFLOP/J |
 
-The P9a column is the one to quote once P9a's numbers are final: measured cycles x measured power.
+**The P9a column is the figure of record: measured cycles x measured power.** (With budget.py's CLS-pruning saving applied to the measured step, P9a's ~3,685 M-cycle estimate, the energy would be about 16.4 x 3,685 / 3,880 = 15.6 J; an estimate.)
 
 ### 1.3 Energy efficiency (for Table IV)
 
@@ -88,8 +91,10 @@ The P9a column is the one to quote once P9a's numbers are final: measured cycles
 |---|---|---|
 | peak FP32 rate | 16 x 16 FMA x 2 flop x 181.818 MHz | 93.1 GFLOP/s |
 | **peak efficiency at the measured GEMM-phase power** | 93.1 GFLOP/s / 0.864 W | **107.7 GFLOP/s/W** |
-| useful flops per full-size step | 2 x 673.7 G GEMM MACs (budget.py, CLS-pruned; the 1.2 G LoWA MACs and the vector work not counted) | 1,347 GFLOP |
-| **step-average efficiency** | 1,347 GFLOP / 14.44 J (budget.py step time; 74.4 GFLOP/s sustained over 18.1 s) | **93.3 GFLOP/J (= GFLOP/s/W)** |
+| flops per full-size step, as executed | 2 x 722.0 G GEMM MACs of the compiled program, unpruned (P9a; the 1.2 G LoWA MACs and the vector work not counted) | 1,444 GFLOP |
+| **step-average efficiency (P9a schedule, figure of record)** | 1,444 GFLOP / 16.41 J (67.7 GFLOP/s sustained over 21.34 s, P9a array utilisation 0.727) | **88.0 GFLOP/J (= GFLOP/s/W)** |
+| same, counting only the CLS-pruned useful MACs | 2 x 673.7 G / 16.41 J | 82.1 GFLOP/J |
+| same, budget.py schedule | 2 x 673.7 G / 14.44 J (18.1 s) | 93.3 GFLOP/J |
 
 - The peak figure uses the GEMM-phase power, so it assumes the array busy at its measured power.
 - The GEMM windows run at about 0.93-0.95 array utilisation (M = 64 rows, 237 MAC/cycle in op 3 at reduced size;
@@ -136,9 +141,11 @@ gate level. The 7 vector / LoWA / AdamW-only stimuli all matched.
 "Power was obtained from a zero-delay gate-level simulation of the complete synthesized netlist running the
 training program on real data, with the resulting switching activity (100 % of nets annotated) analysed in
 PrimePower at the typical corner (1.0 V, 25 C) and 181.8 MHz before place and route. The chip draws 0.86 W while
-the GEMM array is busy and 0.43 W in vector phases, for 14.4 J per full-size training step (0.80 W average over
-18.1 s), i.e. 108 GFLOP/s/W at peak and 93 GFLOP/J over a step; glitch power (zero-delay simulation) and
-clock-tree power are not included."
+the GEMM array is busy and 0.43 W in vector phases; over the measured full-size training step (3.88 G cycles,
+21.3 s) this is 16.4 J per step (0.77 W average), i.e. 108 GFLOP/s/W at peak and 88 GFLOP/J sustained.
+Glitch power (zero-delay simulation) and clock-tree power are not included."
+
+(If the paper keeps budget.py's step time instead: "... 14.4 J per step (0.80 W average over 18.1 s) ... 93 GFLOP/J".)
 
 ## 2. Method
 
@@ -271,7 +278,8 @@ T65_GLS_WAIT_H=15 flow/tsmc65/sta/run_pt_gls.sh gls1 tt <list>      # one PrimeP
 
 Then, locally: `python3 tb/power/cmp_vref.py <fetched sim.out / oplog.txt of each window> build/p9b/stim
 tb/power/win/p9b_plan*.txt` and `python3 tb/power/p9b_energy.py <summary_gls_tt.txt> [--gemm --vec --lowa --opt
-<M cycles> --src <text>]`.
+<M cycles> --src <text>]`; on P9a's schedule: `python3 tb/power/p9b_energy_p9a.py <P9a build/e2e/p9a_full.json> <P9a build/e2e>
+<summary_gls_tt.txt of both PrimePower sessions>`.
 
 Run times on tau-03 (shared, 3 simulations + PrimePower at once):
 - GLS compile 3 min, 2.4 GB. A window run uses 6.5 GB with SAIF.
@@ -283,8 +291,9 @@ Run times on tau-03 (shared, 3 simulations + PrimePower at once):
 ## 4. Files, server data, commits
 
 - Tracked:
-  - `tb/power/{tb_top_gls.sv, mk_cut_stim.py, run_ref_verilator.sh, cmp_vref.py, cmp_oplog.py, p9b_energy.py}`;
-  - `tb/power/win/p9b_plan{,2,3,3b}.txt`;
+  - `tb/power/{tb_top_gls.sv, mk_cut_stim.py, run_ref_verilator.sh, cmp_vref.py, cmp_oplog.py, p9b_energy.py,
+    p9b_energy_p9a.py}`;
+  - `tb/power/win/p9b_plan{,2,3,3b,4}.txt`;
   - `flow/tsmc65/sim/{run_gls.sh, run_p9b.sh, run_p9b_ref.sh, p9b_cmp.sh, p9b_status.sh}`;
   - `flow/tsmc65/sta/{pt_gls_power.tcl, run_pt_gls.sh}`;
   - `flow/tsmc65/site/gls_cells.example.v`; site.example.csh gains `T65_CELL_V`.
@@ -295,5 +304,5 @@ Run times on tau-03 (shared, 3 simulations + PrimePower at once):
 - Server: scripts and the PrimePower summary are under ~/lowa_tsmc65/p9b on the NFS home.
   - The NFS quota ran full during the phase, so the PI approved putting the GLS builds, run directories, stimuli
     and SAIFs on tau-03's local `/tmp/lwta_p9b` (chmod 700).
-  - The SAIFs were deleted after PrimePower had read them, and the directory is deleted at the end of the phase.
+  - The SAIFs were deleted after PrimePower had read them, and the whole directory was deleted on 2026-10-20 at 03:45 UTC, once the PrimePower numbers were final (tau-03 /tmp: 78 GB free afterwards).
   - Netlists, SAIFs and full reports never left the server; only the summary numbers here did.

@@ -86,3 +86,9 @@
   matches Verilator.
 - Overlapped LoWA + GEMM window measured: u_lw adds +0.017 W beside a GEMM, the same as the composed figure.
 - Waiting for P9a's full-size cycles. Its draft report has no numbers yet.
+
+## 2026-10-20 03:50 UTC: DONE
+- P9a's measured schedule is in: 3,880.4 M cycles = 21.34 s. Every op of P9a's full-size chunks was put at its
+  window's power (tb/power/p9b_energy_p9a.py).
+- Result: **16.4 J per step, 0.77 W average, 88 GFLOP/J.** On budget.py's schedule it is 14.4 J / 0.80 W.
+- The report is final (docs/p9b_report.md). The server's /tmp/lwta_p9b was deleted; no jobs are left running.
