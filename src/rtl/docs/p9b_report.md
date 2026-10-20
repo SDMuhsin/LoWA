@@ -1,0 +1,308 @@
+# P9b report: measured-activity chip power (gate-level SAIF, PrimePower)
+
+P9b replaces the P8 power range (0.475 W vectorless / 0.60 W RTL-SAIF upper bound, docs/p8_report.md section 7)
+with power that rests on real switching activity: zero-delay gate-level simulation of the synthesized chip
+netlist on the real training program, SAIF per phase, and PrimePower on the complete flat chip at tt. It covers
+the latch-RF chip of record (18.04 mm2, 5.5 ns, P8f mm). From the per-phase power it gives the energy of a
+full-size training step.
+
+## 1. Results
+
+**Headline (tt, 181.8 MHz, pre-layout):** GEMM phase **0.86 W**, vector phase **0.43 W**, idle floor 0.39 W.
+Full-size training step on P9a's measured schedule (3,880.4 M cycles, 21.34 s): **16.4 J, 0.77 W average**. On
+budget.py's schedule (18.1 s): 14.4 J, 0.80 W. Efficiency: 107.7 GFLOP/s/W peak, 88 GFLOP/J over the measured step.
+
+**What was obtained: the preferred method, at window level.**
+- The switching activity is a zero-delay gate-level VCS simulation of the complete synthesized chip (all 17
+  netlists of the 5.5 ns flat-chip run). It runs the compiled training program on real data, and the gate-level
+  SAIF covers **100.00 % of the 5,368,682 nets and 100.00 % of the leaf cells** (the 1.2 M latch-RF bits
+  included).
+- The power is PrimePower (averaged) on the flat chip at tt (1.0 V, 25 C), 181.8 MHz.
+- The workload is 23 windows of 10-60 k cycles, each inside one op, cut from the real step program (the 1-layer and
+  2-layer reduced programs, B 2, L 32). A whole step cannot be simulated at gate level (section 2.2).
+- Every window's gate-level run is cycle-exact and bit-exact against the Verilator RTL (section 2.3).
+- All numbers are **pre-layout**: ideal clocks (no clock tree), DC wire estimates.
+
+### 1.1 Per-phase power (tt, 181.8 MHz)
+
+| phase | windows (op, W) | phase power |
+|---|---|---|
+| **GEMM** | Q-projection with LoWA merge 0.868, K 0.867, O 0.872, FFN2 0.871, FFN1 + GELU 0.873; backward dX (2-layer, dense gradients): FFN2-dX 0.867, FFN1-dX 0.874, O-dX 0.868; attention scores 0.726 | **0.864 W** (full-size MAC mix: forward dense 32 %, FFN1 16 %, backward dX 47 %, attention 4.5 %) |
+| **vector** | SMAX_FWD 0.433, LN_FWD 0.450, SMAX_REC 0.432, SMAX_BWD 0.418, LN_BWD 0.427 (dense gradients); also EMB 0.419, GN_ROWS 0.435 | **0.433 W** (full-size vector-cycle mix of budget.py) |
+| **LoWA** (LOWA_SG, beside the GEMMs) | LOWA_SG alone 0.403 W, where the LoWA engine (u_lw) draws 0.042 W vs 0.025 W idle. Measured overlapped (window gl2_sgacc: LOWA_SG beside GEMM_ACC2, 2-layer layer-1 backward): chip 0.564 W, u_lw 0.042 W, u_gm 0.428 W, the same as the sparse-gradient GEMM alone (0.435; layer 1 is the last layer, so its backward sees CLS-only gradients). So the engine adds the same +0.017 W beside a GEMM | **+0.017 W** on top of the GEMM phase while it runs |
+| **optimiser** (ADAMW) | 0.396 | **0.396 W** |
+| all engines idle (floor) | ICG clock pins 0.30 W (ideal clock, every cycle) + leakage 0.082 W | about 0.39 W |
+
+- Split of a GEMM window (FFN1, 0.873 W):
+  - u_gm 0.747 W, of which the PE array 0.512, weight feed 0.077, drain 0.063, X feed 0.056, epilogue 0.032;
+  - u_vu 0.071 (idle), u_mm 0.029, u_lw 0.025.
+  - By group: clock network 0.305, combinational 0.454, registers 0.114. Switching 0.284, internal 0.506,
+    leakage 0.082.
+- The **clock network group is 0.30 W in every window, idle or busy**. It is the internal power of the 48,063 ICGs
+  (37,376 of them the latch-RF word gates), whose clock pin sees the ideal root clock every cycle whatever their
+  enable. It is a cost of the latch register file, and a clock tree would add buffer power on top (not modelled).
+- The 1-layer program's own backward windows read lower (FFN backward 0.553 W, LN_BWD 0.408, SMAX_BWD 0.402,
+  LOWA_SG 0.396). There the loss gradient reaches only the 2 CLS rows of dY (every other row is zero), which the
+  11 lower layers of the 12-layer step never see. The phase table therefore uses layer 0 of the 2-layer program,
+  where the gradients are dense.
+
+### 1.2 Energy per training step (full size: 12 layers, B 32, L 128)
+
+E = P_GEMM t_GEMM + P_vec t_vec + P_opt t_opt + dP_LoWA t_LoWA, with **phase times from budget.py** (docs/p8_report.md
+section 8; the same with P9a's measured schedule follows the table):
+
+| phase | cycles | time at 181.8 MHz | power | energy |
+|---|---|---|---|---|
+| GEMM | 2,777.9 M | 15.28 s | 0.864 W | 13.19 J |
+| vector | 506.7 M | 2.79 s | 0.433 W | 1.21 J |
+| LoWA SG (beside GEMM, no time of its own) | 261.8 M | (1.44 s) | +0.017 W | 0.02 J |
+| optimiser + misc | 6.0 M | 0.03 s | 0.396 W | 0.01 J |
+| **step** | **3,290.6 M** | **18.1 s** | **0.80 W average** | **14.4 J** |
+
+- GEMM is 91 % of the step energy.
+- For comparison, the measured reduced step itself (1 layer, B 2, L 32, 10.36 M cycles = 57 ms, each op at its
+  own window's power) averages 0.52 W, or 29.7 mJ. It is dominated by the AdamW of the classifier head (51 % of
+  its cycles), which at full size is 0.2 % of the step.
+
+**With P9a's measured schedule** (docs/p9a_report.md; numbers from P9a's composition file `p9a_full.json` of
+03:39 UTC; the same numbers as P9a's report of 03:43 UTC, section 1): `tb/power/p9b_energy_p9a.py` puts every op of P9a's full-size chunks (B 32,
+L 128, their op logs) at its window's power.
+- Model: power = idle floor (0.3865 W) + the sum over the running ops of (window power - floor). Additivity was
+  checked on the one overlap the program has (LoWA SG beside GEMM_ACC2, 1.1).
+- The parts are composed as P9a composes the cycles: step(12) = step(1) + 11 x (forward body + backward body) +
+  tail growth.
+
+| | P9a measured schedule | budget.py (above) |
+|---|---|---|
+| step cycles | **3,880.4 M = 21.34 s** (the program as compiled, without CLS pruning) | 3,290.6 M = 18.1 s (CLS-pruned) |
+| busy cycles: GEMM (dense / FFN1 / attention) | 2,378 / 493 / 178 M | 2,778 M |
+| busy cycles: vector | 672 M | 507 M |
+| busy cycles: LOWA_SG (half beside GEMM_ACC2) | 276 M | 262 M (all overlapped) |
+| busy cycles: AdamW | 5.3 M | 6.0 M |
+| **energy per step** | **16.4 J** | 14.4 J |
+| average power | **0.77 W** | 0.80 W |
+| step-average efficiency | 2 x 673.7 G useful MACs / 16.4 J = **82 GFLOP/J** (2 x 722.0 G MACs as executed, unpruned: 88 GFLOP/J) | 93 GFLOP/J |
+
+**The P9a column is the figure of record: measured cycles x measured power.** (With budget.py's CLS-pruning saving applied to the measured step, P9a's ~3,685 M-cycle estimate, the energy would be about 16.4 x 3,685 / 3,880 = 15.6 J; an estimate.)
+
+### 1.3 Energy efficiency (for Table IV)
+
+| figure | formula | value |
+|---|---|---|
+| peak FP32 rate | 16 x 16 FMA x 2 flop x 181.818 MHz | 93.1 GFLOP/s |
+| **peak efficiency at the measured GEMM-phase power** | 93.1 GFLOP/s / 0.864 W | **107.7 GFLOP/s/W** |
+| flops per full-size step, as executed | 2 x 722.0 G GEMM MACs of the compiled program, unpruned (P9a; the 1.2 G LoWA MACs and the vector work not counted) | 1,444 GFLOP |
+| **step-average efficiency (P9a schedule, figure of record)** | 1,444 GFLOP / 16.41 J (67.7 GFLOP/s sustained over 21.34 s, P9a array utilisation 0.727) | **88.0 GFLOP/J (= GFLOP/s/W)** |
+| same, counting only the CLS-pruned useful MACs | 2 x 673.7 G / 16.41 J | 82.1 GFLOP/J |
+| same, budget.py schedule | 2 x 673.7 G / 14.44 J (18.1 s) | 93.3 GFLOP/J |
+
+- The peak figure uses the GEMM-phase power, so it assumes the array busy at its measured power.
+- The GEMM windows run at about 0.93-0.95 array utilisation (M = 64 rows, 237 MAC/cycle in op 3 at reduced size;
+  budget.py full-size utilisation 0.947), so the peak figure is close to what a GEMM achieves.
+- Both are pre-layout, at tt, without clock-tree power.
+
+### 1.4 Against the P8 range; the VCS RTL mismatch
+
+**The P8 figures (0.475 W vectorless, 0.60 W "RTL-SAIF upper bound", 8.6-10.8 J per step) are superseded by this
+measurement.** The measured average, 0.80 W over a full-size step and 0.86-0.87 W in a GEMM, is above P8's "upper
+bound". That bound was not one:
+- P8 annotated only about 10 % of the sequential outputs (8 % of the nets) from RTL and let PrimePower propagate
+  the rest, the latch-RF arrays included.
+- P8's GEMM activity came from a VCS RTL run that does not behave like the design (next paragraph).
+- The vectorless 0.475 W assumed 10 % input toggle rates. The GEMM datapath with real FP32 operands toggles far
+  more (switching power 0.28 W against 0.048 W vectorless).
+
+**VCS vs Verilator on the gm_top RTL.** In this phase the VCS RTL simulation (MM_TECH=2, or the generic memory
+backend: identical results) did not match the Verilator RTL on 12 of the 15 stimuli whose first 80 k cycles
+contain GEMM work. VCS wrote fewer DRAM beats and gave different write signatures. For example, the attention-score
+GEMM (op 6) did not finish within 80 k cycles in VCS RTL, while it finishes in 16,247 cycles in Verilator and at
+gate level. The 7 vector / LoWA / AdamW-only stimuli all matched.
+- **Cause: X initial values, not a race and not an RTL bug.** VCS simulates the RTL 4-state, so registers
+  without reset start at X. Verilator (`--x-initial fast`) and the gate-level models start them at 0.
+- Recompiled with `+vcs+initreg+random` and run with every register initialised to 0, to all ones, or to random
+  values, VCS RTL matches Verilator exactly on the GEMM stimuli tested. For example:
+  - op 6: 10,688 write beats, signature 8b7138cc343a4e35, for 0, 1 and random;
+  - op 3: 2,560 beats, signature da651eb438c7dcf2, for 0, 1 and random;
+  - op 40 (SMAX_BWD, then GEMMs): 16,849 beats, signature 9a9a7dc7cc0ee5ef, for 0 and random.
+    With all ones, every op-log event and every heartbeat signature is the same but shifted by exactly one cycle,
+    because the testbench's own cycle counter also starts at all ones. So the 80 k-cycle cut-off holds one beat
+    fewer.
+- So some non-reset gm_top registers start at X, and X-pessimistic RTL evaluation in VCS stalls the GEMM. With any
+  defined power-up value the behaviour is identical.
+- The gate-level runs were never affected: the netlist has no X, its flops start at 0, and it matches Verilator.
+- How sure: high that it is X-initialisation. Three different initial values give one behaviour on three GEMM stimuli, and the
+  uninitialised run is the only divergent one.
+- It is not proven that *every* power-up state behaves identically. Only three were simulated, and the registers
+  concerned were not identified. A reset for those registers (or an X-tolerant review) is advisable before a real
+  tape-out, but it does not affect any P8/P9 result except P8's VCS-based GEMM SAIF.
+
+### 1.5 Proposed paper sentence
+
+"Power was obtained from a zero-delay gate-level simulation of the complete synthesized netlist running the
+training program on real data, with the resulting switching activity (100 % of nets annotated) analysed in
+PrimePower at the typical corner (1.0 V, 25 C) and 181.8 MHz before place and route. The chip draws 0.86 W while
+the GEMM array is busy and 0.43 W in vector phases; over the measured full-size training step (3.88 G cycles,
+21.3 s) this is 16.4 J per step (0.77 W average), i.e. 108 GFLOP/s/W at peak and 88 GFLOP/J sustained.
+Glitch power (zero-delay simulation) and clock-tree power are not included."
+
+(If the paper keeps budget.py's step time instead: "... 14.4 J per step (0.80 W average over 18.1 s) ... 93 GFLOP/J".)
+
+## 2. Method
+
+### 2.1 Design and corner
+
+- Netlists: the 17 block netlists of the flat-chip PrimeTime run at 5.5 ns (docs/p8_report.md section 4.2,
+  T65_KID_TAG `gm16=_p5.25,vu16=_p5.25,mm=_p8f,rng9=_p8f,rng3=_p8f`), read-only from the P8 server checkout:
+  5,189,049 leaf cells, 420,535 flops, 1,196,032 RF latches.
+- PrimePower (pt_shell Q-2019.12-SP2, `power_analysis_mode averaged`), tt 1.0 V 25 C, 5.5 ns clock (181.8 MHz).
+  The flat chip, all 356 per-instance DC-topographical SPEF reads (ss RC estimate, as in P8), the DC SDC
+  regenerated for tt, ideal clocks. The design is loaded once (48 min, 7.5 GB) and each window's SAIF is applied
+  in turn (`reset_switching_activity`, `read_saif`, `update_power`), 2-6 min per window
+  (`flow/tsmc65/sta/pt_gls_power.tcl`, `run_pt_gls.sh`).
+
+### 2.2 Gate-level simulation
+
+- VCS S-2021.09, zero delay: no SDF, `+nospecify +notimingcheck`. The combinational cells come from the
+  library's Verilog models. The sequential cells (flops, RF latches, ICGs; 27 cell types) are replaced by
+  behavioural models in the git-ignored site file `flow/tsmc65/site/gls_cells.v` (template
+  `gls_cells.example.v`). In those models every flop or latch output moves 0.05 ns after its clock edge or
+  enable, while the clock gates stay zero-delay.
+  - Why: the library models clock their state through zero-delay UDPs, so with ideal clocks a flop behind a
+    clock gate (each latch-RF word and the DC clock gates) would sample its data a delta cycle after the
+    ungated flops had already updated. This is the classic zero-delay clock-gating race.
+  - All state starts at 0 (the RTL simulations use Verilator `--x-initial fast`).
+  - Compile: 3 min, 2.4 GB. A run uses 4.8 GB, or 6.5 GB with SAIF recording.
+- Testbench: `tb/power/tb_top_gls.sv`. It is tb/top/tb_top.sv (same top_chip hookup, DRAM model with the
+  nominal knobs, AXI4-Lite host script) with only nets that exist in both the RTL and the netlist:
+  - top_chip has no logic, so its unit-to-unit wires keep their RTL names;
+  - the clock is the chip clock (5.5 ns), so SAIF durations need no rescaling;
+  - SAIF windows (`$toggle_start / $toggle_stop / $toggle_report`, gate-level monitoring on, region u_chip) are
+    given in cycles from the start of the first unit op;
+  - it prints a DRAM write-stream signature (all accepted W beats: data, strobes) at every heartbeat.
+- Workload: the compiled training program of the e2e test (tb/top/run_e2e.py, 1 layer, B 2, L 32, one step,
+  10.36 M cycles; real roberta-base weights and SST-2 tokens). The full-size program cannot be simulated at gate
+  level: the GEMM runs at 4-19 cycles/s, the vector ops at 20-60 cycles/s.
+- Windows deep in the step (`tb/power/mk_cut_stim.py --cut k`): the program starts at unit op k.
+  - The interpreter (sw/interp.py) executes every descriptor before op k on the initial image, so the DRAM image
+    holds exactly the data those ops produce.
+  - The descriptors before op k (except SETCSR) become NOPs, slot for slot.
+  - A pending event flag of a skipped producer is dropped from its first consumer's WAIT.
+  - Check: the RTL run of the cut at op 44 reproduces every op duration of the uncut program: 179,919 /
+    179,919 / 1,275 / 1,271 / 191,831 / ... / 5,329,393 cycles (the first op differs by 1 cycle).
+- One window per op type, 10-60 k cycles inside the op, after its first operand loads (tb/power/win/p9b_plan.txt).
+
+### 2.3 Gate level = RTL (functional check of the power simulation)
+
+Reference: the same testbench on the RTL in Verilator, the simulator of the bit-exact e2e tests
+(`tb/power/run_ref_verilator.sh`; the SAIF code is compiled out). Every stimulus was run to 80 k cycles.
+`tb/power/cmp_vref.py` checks two things against the gate-level run of each window:
+- every heartbeat (every 10 k cycles: cycle, unit busy flags, DRAM write beats, and a 64-bit signature over every
+  accepted W beat's data, strobes and address);
+- the op log (cycle of every unit start / done / retire).
+
+Result: **CMP_VREF ALL OK** for all 23 windows (incl. the overlapped LoWA + GEMM window gl2_sgacc). Write
+beats with data inside the gate-level runs:
+
+| windows with DRAM writes before their last heartbeat | write beats compared (signature equal) |
+|---|---|
+| v_emb, v_smax, v_ln, v_lnb, v_smaxb (1-layer) | 1,024 / 1,836 / 3,060 / 1,536 / 2,048 |
+| v2_lnb, v2_smaxr, v2_smaxb (2-layer) | 1,044 / 2,240 / 2,688 |
+| o_adamw (head AdamW, 6 op-log events) | 2,552 |
+| g_att (attention-score GEMMs, epilogue writes) | 1,536 |
+
+- The long GEMMs write their first C block only after 10-20 k cycles, after the windows' last heartbeat. For them
+  the check is the cycle-exact busy flags and op log; the GEMM datapath's bit-exactness is shown by g_att.
+- An earlier 175 k-cycle run from reset (no SAIF) matched cycle for cycle: EMB done / retire, DMA, LOWA_SCAL and
+  the first GEMM start.
+- The flops' 0.05 ns output delay therefore changes no cycle, and the netlist (Formality-verified, P8) behaves as
+  the RTL on these workloads.
+
+### 2.4 What is and is not measured
+
+Measured:
+- Switching activity of every net of the chip netlist: 5,368,682 nets, 100.00 % annotated from the gate-level
+  SAIF, and 100.00 % of the leaf cells fully annotated. This includes the 1.2 M latch-RF bits, their word ICGs and
+  the DC clock gates. PrimePower propagates nothing.
+- It is taken on real data (roberta-base weights, real tokens) running the compiled training program, in one
+  window per op type.
+
+Not measured, or estimated:
+- **Zero-delay simulation, so no glitch power.** Every net toggles at most once per evaluation, so the
+  switching and internal power of combinational glitches (in the FP multipliers and adders above all) is not
+  counted. This makes the switching part a lower bound; it is 0.28 W of the 0.87 W in a GEMM window.
+- **PrimePower at tt with the ss-closed clock.** The power is at tt (1.0 V, 25 C) with the 5.5 ns clock that
+  closes timing at ss (0.9 V, 125 C), and the ss RC estimate is used at tt. At tt the chip would run faster; the
+  figures are the power at 181.8 MHz.
+- **Pre-layout.** There is no clock tree: clock nets are ideal, so clock-buffer power is missing, while the clock
+  pins of the flops, latches and ICGs are counted. Wires are DC topographical estimates (ss RC, used at tt). P9c's
+  placement / CTS is not used here.
+- **Windows, not whole ops.** Each window is 10-60 k cycles of one op, at the reduced shape (B 2, L 32), not the
+  full-size shape (B 32, L 128).
+  - GEMM tiles are the same 64 x 64 blocks at either size. The array-row occupancy (M = 64 rows per block) and the
+    data statistics are those of the reduced batch.
+  - Vector ops at full size have longer rows for softmax (L 128 instead of 32).
+- **Phase power to step energy is a composition.**
+  - Phase power is the weighted mean of the window powers. GEMM is weighted by the full-size MAC mix of
+    budget.py's GEMM list; vector by budget.py's full-size vector-cycle mix (SMAX_FWD, LN_FWD, SMAX_REC +
+    SMAX_BWD, LN_BWD).
+  - Phase times are budget.py's (or P9a's measured cycles, where stated).
+  - The LoWA engine runs beside the GEMMs. Its extra power is u_lw's power in the LOWA_SG window minus u_lw's
+    power in the GEMM windows, not a measured overlapped window.
+  - The attention-score GEMMs and DMA copies are counted inside GEMM time at the GEMM-phase power.
+- tt corner only, averaged power (no time-based peak power).
+- Latch-RF variant only. The SRAM-macro variant (P8e) has no gate-level run.
+
+## 3. Reproduction
+
+Locally (src/rtl), the stimuli (design data: program and DRAM images):
+
+```
+python3 tb/top/run_e2e.py --layers 1 --batch 2 --seq 32 --steps 1 --prep-only --out build/p9b/e2e   # l1 = cut 0
+for k in 3 4 6 7 9 10 11 12 30 32 40 44 48 53; do python3 tb/power/mk_cut_stim.py --cut $k --out build/p9b/stim/c$k; done
+for k in 60 62 63 66 68 70 74; do python3 tb/power/mk_cut_stim.py --layers 2 --cut $k --out build/p9b/stim/L2c$k; done
+# copy dram.reg / dram.bin / host.txt of each to the server build/tsmc65/stim/<l1|c<k>|L2c<k>>/
+tb/power/run_ref_verilator.sh 80000 build/p9b/stim/*        # Verilator RTL references (EDA environment of make test-e2e)
+```
+
+Server (src/rtl of the P9b tree; netlists read-only from the P8 checkout, `T65_HIER=<P8 checkout>/build/tsmc65/hier`;
+the bulky simulation directories were symlinked to tau-03's local /tmp, section 4):
+
+```
+GLS_DIR=gls2 flow/tsmc65/sim/run_gls.sh build                       # 1-layer windows (MEMW 24)
+GLS_DIR=gls3 GLS_MEMW=25 flow/tsmc65/sim/run_gls.sh build           # 2-layer windows (71 MiB image)
+GLS_DIR=gls2 GLS_PAR=3 GLS_NOBUILD=1 GLS_WINLIST=<list> flow/tsmc65/sim/run_p9b.sh            # tb/power/win/p9b_plan.txt
+GLS_DIR=gls2 GLS_PAR=3 GLS_NOBUILD=1 GLS_WINLIST=<list> GLS_PLAN=tb/power/win/p9b_plan2.txt flow/tsmc65/sim/run_p9b.sh g_k g_att g_o
+GLS_DIR=gls3 GLS_PAR=3 GLS_NOBUILD=1 GLS_WINLIST=<list> GLS_PLAN=tb/power/win/p9b_plan3b.txt flow/tsmc65/sim/run_p9b.sh
+T65_GLS_WAIT_H=15 flow/tsmc65/sta/run_pt_gls.sh gls1 tt <list>      # one PrimePower session, each SAIF as it lands
+```
+
+Then, locally: `python3 tb/power/cmp_vref.py <fetched sim.out / oplog.txt of each window> build/p9b/stim
+tb/power/win/p9b_plan*.txt` and `python3 tb/power/p9b_energy.py <summary_gls_tt.txt> [--gemm --vec --lowa --opt
+<M cycles> --src <text>]`; on P9a's schedule: `python3 tb/power/p9b_energy_p9a.py <P9a build/e2e/p9a_full.json> <P9a build/e2e>
+<summary_gls_tt.txt of both PrimePower sessions>`.
+
+Run times on tau-03 (shared, 3 simulations + PrimePower at once):
+- GLS compile 3 min, 2.4 GB. A window run uses 6.5 GB with SAIF.
+- Speed: GEMM 3.5-19 cycles/s, vector 20-60, LoWA / AdamW 100-250.
+- The GEMM windows take 20-80 min, the others 10-25 min.
+- The PrimePower load takes 48 min and 7.5 GB, then 90-110 s per window.
+- A gate-level SAIF of the chip is 1.5 GB.
+
+## 4. Files, server data, commits
+
+- Tracked:
+  - `tb/power/{tb_top_gls.sv, mk_cut_stim.py, run_ref_verilator.sh, cmp_vref.py, cmp_oplog.py, p9b_energy.py,
+    p9b_energy_p9a.py}`;
+  - `tb/power/win/p9b_plan{,2,3,3b,4}.txt`;
+  - `flow/tsmc65/sim/{run_gls.sh, run_p9b.sh, run_p9b_ref.sh, p9b_cmp.sh, p9b_status.sh}`;
+  - `flow/tsmc65/sta/{pt_gls_power.tcl, run_pt_gls.sh}`;
+  - `flow/tsmc65/site/gls_cells.example.v`; site.example.csh gains `T65_CELL_V`.
+- Git-ignored site file: `flow/tsmc65/site/gls_cells.v` (library cell names).
+- No RTL change.
+- `run_p9b_ref.sh` / `p9b_cmp.sh` are the VCS-RTL comparison. It is kept for the record of the VCS-RTL GEMM
+  mismatch (1.3); the reference of record is Verilator (`run_ref_verilator.sh`, `cmp_vref.py`).
+- Server: scripts and the PrimePower summary are under ~/lowa_tsmc65/p9b on the NFS home.
+  - The NFS quota ran full during the phase, so the PI approved putting the GLS builds, run directories, stimuli
+    and SAIFs on tau-03's local `/tmp/lwta_p9b` (chmod 700).
+  - The SAIFs were deleted after PrimePower had read them, and the whole directory was deleted on 2026-10-20 at 03:45 UTC, once the PrimePower numbers were final (tau-03 /tmp: 78 GB free afterwards).
+  - Netlists, SAIFs and full reports never left the server; only the summary numbers here did.

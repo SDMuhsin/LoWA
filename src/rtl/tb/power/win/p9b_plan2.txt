@@ -1,0 +1,9 @@
+# P9b second batch: more GEMM types (same format as p9b_plan.txt), 10 k-cycle windows after the first operand loads
+g_k       c4   4000  14000    # 4  GEMM M64 N768 K768, no merge (K projection), 158,766
+g_att     c6   2000  12000    # 6  GEMM M32 N32 K64 x 24 heads (attention scores), 16,252
+g_o       c9   4000  14000    # 9  GEMM M64 N768 K768 (attention output), 165,082
+g_ffn2f   c12  4000  14000    # 12 GEMM M64 N768 K3072 (FFN2 forward), 619,546
+g_ffn1dx  c33  4000  14000    # 33 GEMM M64 N768 K3072 (FFN backward, second), 619,546
+g_odx     c36  4000  14000    # 36 GEMM M64 N768 K768 (attention output backward), 158,766
+k_ffnb    c32  15000 15500    # check run: past the first C writes (RTL ref HB at cycle 20000)
+k_qkv     c3   19500 20000    # check run: past the first C writes

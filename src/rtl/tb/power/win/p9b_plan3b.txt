@@ -1,0 +1,8 @@
+g_ffn2f   c12  4000  14000    # 12 GEMM M64 N768 K3072 (FFN2 forward), 619,546 (from batch 2)
+g2_ffn2dx  L2c62  4000  14000    # 62 GEMM M64 N3072 K768 (FFN2 dX, GELU' epilogue)
+g2_ffn1dx  L2c63  4000  14000    # 63 GEMM M64 N768 K3072 (FFN1 dX)
+g2_odx     L2c66  4000  14000    # 66 GEMM M64 N768 K768 (attention output dX)
+v2_lnb     L2c60  1000  31000    # 60 VEC LN_BWD
+v2_smaxr   L2c68  1000  31000    # 68 VEC SMAX_REC
+v2_smaxb   L2c70  1000  31000    # 70 VEC SMAX_BWD
+l2_sg      L2c74  2000  42000    # 74 LOWA_SG
