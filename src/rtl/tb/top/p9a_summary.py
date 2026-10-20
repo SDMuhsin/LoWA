@@ -92,16 +92,22 @@ def main():
     try:
         C = {nm: beats(lay, j, k) for nm, lay, j, k, _ in CH.L1_CHUNKS + CH.BODY_CHUNKS}
         S = {"S6": beats(1, 6, 6), "S10": beats(1, 10, 10), "S31": beats(1, 31, 31), "S39": beats(1, 39, 39),
-             "SB39": beats(2, 39, 39), "S0_2": beats(1, 0, 2)}
+             "SB39": beats(2, 39, 39)}
     except (FileNotFoundError, KeyError) as e:
         print(f"DRAM: incomplete ({e})")
         return
+    try:
+        S["S0_2"] = beats(1, 0, 2)
+    except (FileNotFoundError, KeyError):
+        S["S0_2"] = None
     l1 = sub(add(*(C[n] for n, *_ in CH.L1_CHUNKS)), add(S["S6"], S["S10"], S["S31"], S["S39"], C["D5a"]))
     body = sub(add(*(C[n] for n, *_ in CH.BODY_CHUNKS)), S["SB39"])
-    fb = add(sub(C["C1"], S["S0_2"]), sub(C["C2"], S["S6"]), sub(C["C3"], S["S10"]), C["C4"], S["S10"])
-    tot = add(l1, (11 * fb[0], 11 * fb[1]), (11 * body[0], 11 * body[1]))
-    for nm, (r, w), cyc in (("1-layer step", l1, t1), ("forward body", fb, F), ("backward body", body, tb),
-                            ("12-layer step (tail growth not counted)", tot, step)):
+    rows = [("1-layer step", l1, t1), ("backward body", body, tb)]
+    if S["S0_2"]:
+        fb = add(sub(C["C1"], S["S0_2"]), sub(C["C2"], S["S6"]), sub(C["C3"], S["S10"]), C["C4"], S["S10"])
+        tot = add(l1, (11 * fb[0], 11 * fb[1]), (11 * body[0], 11 * body[1]))
+        rows += [("forward body", fb, F), ("12-layer step (tail growth not counted)", tot, step)]
+    for nm, (r, w), cyc in rows:
         by = 32 * (r + w)
         print(f"DRAM {nm:40s} read {32 * r / 1e9:8.2f} GB write {32 * w / 1e9:7.2f} GB  {by / cyc:5.2f} B/cycle = "
               f"{by / cyc * MHZ * 1e6 / 1e9:5.2f} GB/s at {MHZ:.1f} MHz ({by / cyc / 32:.1%} of the 32 B/cycle port)")

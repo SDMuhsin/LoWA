@@ -22,6 +22,15 @@
 - Speed per single-thread sim under the current load: ~1.2-1.5 k cycles/s; the longest chunk is ~42 M cycles, so ETA
   for the full-size numbers ~06:00-08:00 UTC (freeze 12:00).
 
+## 2026-10-20 04:15 UTC
+- All full-size chunks done; all 22 chunk / single-op runs PASS `--check-only` (bit-exact vs the interpreter on the same
+  chunk program).
+- **Full-size 12-layer step (no CLS pruning, as compiled): 3,880,380,750 cycles = 21.34 s at 5.5 ns**; budget.py
+  3,485.65 M without pruning (+11.3 %), 3,290.6 M with pruning (+17.9 %). Array utilisation 0.727.
+- V12 (in-situ 12-layer reduced, current RTL incl. P8f): PASS bit-exact vs interpreter and L1, 61,634,485 cycles;
+  composition 61,633,299 (-0.002 %).
+- Report docs/p9a_report.md written; DRAM forward-body split waits for the S0_2 single-chunk run (ETA ~05:40).
+
 ## 2026-10-20 00:45 UTC
 - V1 (in-situ 1-layer reduced, 2 steps, current RTL): E2E PASS; step 1 10,359,277 vs composed 10,359,261 (-16).
 - Full-size chunks done: C5, C10, D1a, D4, D5a. Full-size tail ops (GNORM x 7, DMA, AdamW x 2) are cycle-identical
