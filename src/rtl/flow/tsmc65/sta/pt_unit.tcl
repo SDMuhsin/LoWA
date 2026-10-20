@@ -113,6 +113,23 @@ if {$post ne ""} {
     set q [get_timing_paths -delay_type min -max_paths 1]
     puts $fh [format "hold_path %s launch_clk_lat %s capture_clk_lat %s" [t65_path_line $q] \
         [t65_n [get_attribute -quiet $q startpoint_clock_latency]] [t65_n [get_attribute -quiet $q endpoint_clock_latency]]]
+    # register-to-register only (no IO): the unit's IO delays are relative to the ideal clock at the port, while the
+    # internal clock arrives after the tree's insertion delay (ICC2 adjusts IO latencies during CTS, PrimeTime does not),
+    # so IO paths of a unit run alone are boundary artefacts of the unit constraints, not chip paths
+    set rf [all_registers -clock_pins]; set rt [all_registers -data_pins]
+    foreach {dt lbl} {max setup min hold} {
+        set q [get_timing_paths -delay_type $dt -max_paths 1 -from $rf -to $rt]
+        set nv [sizeof_collection [get_timing_paths -delay_type $dt -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -from $rf -to $rt]]
+        puts $fh [format "r2r_%s_wns %s nviol %d path %s" $lbl [t65_n [get_attribute -quiet $q slack]] $nv [t65_path_line $q]]
+    }
+    foreach {dt lbl} {max setup min hold} {
+        set q [get_timing_paths -delay_type $dt -max_paths 1 -from [remove_from_collection [all_inputs] [get_ports clk]]]
+        set nv [sizeof_collection [get_timing_paths -delay_type $dt -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -from [remove_from_collection [all_inputs] [get_ports clk]]]]
+        puts $fh [format "in2reg_%s_wns %s nviol %d" $lbl [t65_n [get_attribute -quiet $q slack]] $nv]
+        set q [get_timing_paths -delay_type $dt -max_paths 1 -to [all_outputs]]
+        set nv [sizeof_collection [get_timing_paths -delay_type $dt -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -to [all_outputs]]]
+        puts $fh [format "reg2out_%s_wns %s nviol %d" $lbl [t65_n [get_attribute -quiet $q slack]] $nv]
+    }
     set q [get_timing_paths -delay_type max -max_paths 1]
     puts $fh [format "setup_clk_lat launch %s capture %s" \
         [t65_n [get_attribute -quiet $q startpoint_clock_latency]] [t65_n [get_attribute -quiet $q endpoint_clock_latency]]]
