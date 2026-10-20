@@ -126,7 +126,12 @@ are excluded below.
 
 lw's global route overflows 19.4 % of its routing cells at 0.65 target utilisation, against 0.29 % predicted at
 placement. The detours make the latch-RF read muxes in u_sg (banks of 512 and 768 words) up to 4-5 ns slow.
-@@LWU50@@
+Two reruns tested whether more area fixes it:
+- 0.50 target utilisation (core 2.60 mm2): overflow 14.5 %, ICC2 setup -4.70 ns after global route.
+- 0.50 target plus a 0.55 local placement-density cap with high congestion effort: overflow 6.5 % (place-stage
+  estimate 0.21 %), still -4.51 ns.
+So spreading the cells reduces the overflow but does not remove the hot spots (max overflow 57-64 tracks per routing
+cell).
 vu16 (256-word banks) and mm (no RF) route with 0.36-0.38 % overflow. gm16 uses 512-word banks (32 of its 64 banks),
 so it may share lw's problem. This is unresolved; with SRAM macros (P8e) it disappears.
 
@@ -200,7 +205,10 @@ With it, the measured-activity step average is about 0.9 W or less.
 - **Power** is vectorless (same settings as P8), tt, with ss RC at tt as in P8. P9b's gate-level SAIF was not applied
   to the placed netlists: it was recorded on the pre-layout chip netlist on tau-03, and the placed units are on tau-02.
 - **Disk:** after the home quota filled (21:05 UTC), run directories were moved to tau-02 local /tmp/lwta_p9c (PI
-  approval). @@CLEANUP@@
+  approval). It peaked at 31 GB. It was **deleted on 2026-10-20 at 05:15 UTC** once the numbers were final. The summary
+text files (59) and launcher logs were kept in the server clone (`~/lowa_tsmc65/p9c/src/rtl/build/tsmc65/summary`,
+`logs_p9c`). The ICC2 databases, netlists and SPEF are gone; they can be rebuilt with section 8 (about 8 h on 8-12
+threads for the three units).
 
 ## 7. Proposed paper text
 

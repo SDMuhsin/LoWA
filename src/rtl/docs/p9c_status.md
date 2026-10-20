@@ -82,3 +82,9 @@ Branch p9c, server tau-02, clone ~/lowa_tsmc65/p9c (netlists read from the P8 ch
 - Report draft committed (docs/p9c_report.md): chip extrapolation 0.56-0.59 W vectorless tt, ~5.9 ns post-CTS
   before post-route optimisation; 5.5 ns stays a pre-layout figure.
 - Remaining: lw at 0.50 utilisation with a 0.55 density cap (ETA ~06:30 UTC), then cleanup of /tmp/lwta_p9c.
+
+## 2026-10-20 05:20 UTC: done
+- lw at 0.50 + 0.55 density cap: global-route overflow 6.5 % (from 19.4 % / 14.5 %), ICC2 setup still -4.51 ns:
+  lw's large-bank congestion is unresolved (reported as such).
+- Numbers final; /tmp/lwta_p9c (31 GB) deleted at 05:15 UTC; summaries kept in the server clone.
+- Report: docs/p9c_report.md.
