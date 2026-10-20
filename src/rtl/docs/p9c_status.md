@@ -35,3 +35,14 @@ Branch p9c, server tau-02, clone ~/lowa_tsmc65/p9c (netlists read from the P8 ch
   build_clock + final_opto without clock detail routing (T65_CTS_ROUTE=0); clock and signal nets get the same global route.
 - Measured so far: mm place_opt 31.5 min / 4.4 GB (4 threads); pre-layout references at 5.5 ns (same units, same
   method as P8): lw ss setup WNS 0 (flop +1.179), lw tt vectorless 33.9 mW (clock network 54 %), mm ss +0.172.
+
+## 2026-10-20 00:20 UTC
+- lw done through global route (0.65 target, 6 threads): clock_opt 1 h 57 min / 4.9 GB, route_global 57 min / 4.5 GB.
+  - CTS (ICC2 report_clock_qor): 135,110 sinks, 11 levels, 8,234 clock repeaters (32,494 um2) + clock-gate cells;
+    max latency 1.20 ns / global skew 0.59 ns at ss (0.52 / 0.24 ns at ff); post-CTS ICC2 setup WNS -0.006 ns
+    (2 endpoints, with +0.10 ns ICC2 margin), hold -0.003 ns (54 endpoints at ff).
+  - **Global route is heavily congested at 0.65**: 19.4 % of GRCs overflow (place-stage estimate was 0.29 %); with
+    those detours ICC2 setup at ss is -5.40 ns (latch-RF read muxes). Not a usable timing result as is.
+- Running: lw post-CTS PrimeTime with (i) the global-route SPEF and (ii) ICC2's placement-based RC estimate of the
+  post-CTS database; lw again at 0.50 utilisation (does the congestion go away? die-area datum); mm clock_opt;
+  vu16 clock_opt (place took 1 h 56 min / 8 threads).
