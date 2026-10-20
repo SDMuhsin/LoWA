@@ -58,7 +58,15 @@ The same chunk set was run at B 2, L 32 and composed the same way, against in-si
 | forward body (in-situ F1 of the 2-layer run V2) | 2,108,967 | 2,108,967 | 0 |
 | backward body (in-situ B1 of V2) | 2,545,138 | 2,545,141 | +3 |
 | 2-layer step (V2, PASS bit-exact) = 1-layer + F + B + tail growth 7,174 | 15,020,725 | 15,020,543 | -182 |
-| 12-layer step (V12, current RTL) | TBD | TBD | TBD |
+| 12-layer step (V12, current RTL, PASS bit-exact vs interpreter and L1) = 1-layer + 11 x (F + B) + tail growth 78,850 | 61,634,485 | 61,633,299 | -1,186 (-0.002 %) |
 
-Shared ops at chunk boundaries (simulated at the end of one chunk and the start of the next): equal at 4 of 6
-boundaries, +2 cycles at the other 2.
+- Shared ops at chunk boundaries (simulated at the end of one chunk and the start of the next): equal at 4 of 6
+  boundaries, +2 cycles at the other 2.
+- V12 per segment (in situ): forward bodies F0..F10 2,109,045-2,109,048, F11 (the last, before the head) 2,108,967;
+  backward bodies alternate 2,545,136 / 2,545,184; layer-0 backward 2,177,895; tail 5,613,821 (the isolated
+  12-layer tail chunk, rT12: 5,613,821, identical). The composition uses the 1-layer program's forward body (which is
+  also the last one before the head), so it is 81 cycles short for each of the 10 inner forward bodies; that and the
+  backward-body alternation are the -1,186 cycles.
+- V12 is also the first 12-layer run of the P8f RTL (the mm skid buffers): ALLWRITES (8,346,904 words) and 24/24 result
+  tensors bit-exact vs the interpreter and vs L1, loss 0.785167277, 61,634,485 cycles (P8 run before P8f:
+  61,639,415; P8f saves 4,930 cycles = 0.008 %).
