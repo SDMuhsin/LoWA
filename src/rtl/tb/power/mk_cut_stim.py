@@ -111,7 +111,7 @@ def main():
                 loop = None
     # inside a loop: only the one-iteration layer loop of --layers 1 (the chip, its LOOP descriptor replaced by a NOP,
     # runs the rest of the body once, straight through, with the terms at their reset values, as the loop would)
-    assert loop is None or (loop["left"] == 1 and all(t == 0 for t in m.term[:14])), "cut inside a multi-iteration loop"
+    assert loop is None or loop["left"] == 1, "cut inside a multi-iteration loop"
     # after the loops the chip's terms are at their reset values (0; STEP / SLOT from the CSRs) while the
     # interpreter's need not be: every kept descriptor must decode to the same fields with both
     t_rst = [0] * 16

@@ -9,7 +9,8 @@
 # Environment: T65_HIER (netlist root, default build/tsmc65/hier), T65_KID_TAG (as for DC / PT; default = the
 #   chip of record at 5.5 ns: gm16=_p5.25,vu16=_p5.25,mm=_p8f,rng9=_p8f,rng3=_p8f), GLS_RTL=1: the RTL instead of the
 #   netlists (same testbench, behavioural clock gate, MM_TECH=2 latch RF) for the cycle-by-cycle comparison;
-#   GLS_DIR: build / run directory under build/tsmc65 (default gls, gls_rtl); GLS_MEMW: DRAM model words log2 (24).
+#   GLS_DIR: build / run directory under build/tsmc65 (default gls, gls_rtl); GLS_MEMW: DRAM model words log2 (24);
+#   GLS_RTL_DEF: defines of the RTL build (default +define+MM_TECH=2; empty = the generic memory backend).
 # GLS_SAIF_DIR (or the file build/tsmc65/gls/saif_dir): where the SAIF files go (see run).
 # Cell models: the library Verilog ($T65_CELL_V from site.csh) for the combinational cells, site/gls_cells.v for
 # the sequential ones (they take precedence: the library is read with -v).
@@ -27,7 +28,7 @@ build)
     : > files.f
     if [ -n "${GLS_RTL:-}" ]; then
         find "$ROOT/hw" -name '*.v' | sort > files.f
-        def="+define+MM_TECH=2"
+        def="${GLS_RTL_DEF-+define+MM_TECH=2}"
         cells=""
     else
         for b in $BLOCKS; do d=$HIER/$b$(tagof "$b"); [ -f "$d/$b.v" ] || { echo "GLS_ERROR missing $d/$b.v"; exit 1; }; echo "$d/$b.v" >> files.f; done

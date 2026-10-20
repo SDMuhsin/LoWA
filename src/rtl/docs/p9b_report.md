@@ -63,29 +63,60 @@ section 8; P9a's measured cycles were not available at the time of writing, see 
 With P9a's measured full-size cycles (docs/p9a_report.md), the same powers give: pending (P9a ETA 06:00-08:00 UTC);
 the step energy scales with the GEMM time at 0.864 W per second of GEMM and the vector time at 0.433 W.
 
-### 1.3 Against the P8 range
+### 1.3 Energy efficiency (for Table IV)
 
-The measured average, 0.80 W over a full-size step and 0.86-0.87 W in a GEMM, is **above** P8's 0.60 W "RTL-SAIF
-upper bound". It is not a contradiction of a measurement.
-- P8's figure annotated only about 10 % of the sequential outputs (8 % of the nets) from RTL and let PrimePower
-  propagate the rest, the latch-RF arrays included. P8's GEMM workload was also a VCS RTL run.
-- In this phase the VCS RTL simulation of gm_top (MM_TECH=2) was found **not to match** the Verilator RTL, which
-  is the simulator of every bit-exact test, on 12 of the 15 stimuli whose first 80 k cycles contain GEMM work.
-  It writes fewer DRAM beats and gives different write signatures; the 7 vector / LoWA / AdamW-only stimuli all
-  match. For example, the attention-score
-  GEMM (op 6) does not finish within 80 k cycles in VCS RTL, while it finishes in 16,247 cycles in Verilator and
-  at gate level. The cause was not traced.
-- The vectorless 0.475 W assumed 10 % input toggle rates. The GEMM datapath with real FP32 operands toggles
-  much more (switching power 0.28 W against 0.048 W vectorless).
-- Both P8 figures are superseded by this one.
+| figure | formula | value |
+|---|---|---|
+| peak FP32 rate | 16 x 16 FMA x 2 flop x 181.818 MHz | 93.1 GFLOP/s |
+| **peak efficiency at the measured GEMM-phase power** | 93.1 GFLOP/s / 0.864 W | **107.7 GFLOP/s/W** |
+| useful flops per full-size step | 2 x 673.7 G GEMM MACs (budget.py, CLS-pruned; the 1.2 G LoWA MACs and the vector work not counted) | 1,347 GFLOP |
+| **step-average efficiency** | 1,347 GFLOP / 14.44 J (budget.py step time; 74.4 GFLOP/s sustained over 18.1 s) | **93.3 GFLOP/J (= GFLOP/s/W)** |
 
-### 1.4 Proposed paper sentence
+- The peak figure uses the GEMM-phase power, so it assumes the array busy at its measured power.
+- The GEMM windows run at about 0.93-0.95 array utilisation (M = 64 rows, 237 MAC/cycle in op 3 at reduced size;
+  budget.py full-size utilisation 0.947), so the peak figure is close to what a GEMM achieves.
+- Both are pre-layout, at tt, without clock-tree power.
+
+### 1.4 Against the P8 range; the VCS RTL mismatch
+
+**The P8 figures (0.475 W vectorless, 0.60 W "RTL-SAIF upper bound", 8.6-10.8 J per step) are superseded by this
+measurement.** The measured average, 0.80 W over a full-size step and 0.86-0.87 W in a GEMM, is above P8's "upper
+bound". That bound was not one:
+- P8 annotated only about 10 % of the sequential outputs (8 % of the nets) from RTL and let PrimePower propagate
+  the rest, the latch-RF arrays included.
+- P8's GEMM activity came from a VCS RTL run that does not behave like the design (next paragraph).
+- The vectorless 0.475 W assumed 10 % input toggle rates. The GEMM datapath with real FP32 operands toggles far
+  more (switching power 0.28 W against 0.048 W vectorless).
+
+**VCS vs Verilator on the gm_top RTL.** In this phase the VCS RTL simulation (MM_TECH=2, or the generic memory
+backend: identical results) did not match the Verilator RTL on 12 of the 15 stimuli whose first 80 k cycles
+contain GEMM work. VCS wrote fewer DRAM beats and gave different write signatures. For example, the attention-score
+GEMM (op 6) did not finish within 80 k cycles in VCS RTL, while it finishes in 16,247 cycles in Verilator and at
+gate level. The 7 vector / LoWA / AdamW-only stimuli all matched.
+- **Cause: X initial values, not a race and not an RTL bug.** VCS simulates the RTL 4-state, so registers
+  without reset start at X. Verilator (`--x-initial fast`) and the gate-level models start them at 0.
+- Recompiled with `+vcs+initreg+random` and run with every register initialised to 0, to all ones, or to random
+  values, VCS RTL matches Verilator exactly on the GEMM stimuli tested. For example:
+  - op 6: 10,688 write beats, signature 8b7138cc343a4e35, for 0, 1 and random;
+  - op 3: 2,560 beats, signature da651eb438c7dcf2, for 0 and 1. (The other initial values for op 3 and op 40 had
+    not finished when this was written.)
+- So some non-reset gm_top registers start at X, and X-pessimistic RTL evaluation in VCS stalls the GEMM. With any
+  defined power-up value the behaviour is identical.
+- The gate-level runs were never affected: the netlist has no X, its flops start at 0, and it matches Verilator.
+- How sure: high that it is X-initialisation. Three different initial values give one result, and the
+  uninitialised run is the only divergent one.
+- It is not proven that *every* power-up state behaves identically. Only three were simulated, and the registers
+  concerned were not identified. A reset for those registers (or an X-tolerant review) is advisable before a real
+  tape-out, but it does not affect any P8/P9 result except P8's VCS-based GEMM SAIF.
+
+### 1.5 Proposed paper sentence
 
 "Power was obtained from a zero-delay gate-level simulation of the complete synthesized netlist running the
 training program on real data, with the resulting switching activity (100 % of nets annotated) analysed in
 PrimePower at the typical corner (1.0 V, 25 C) and 181.8 MHz before place and route. The chip draws 0.86 W while
 the GEMM array is busy and 0.43 W in vector phases, for 14.4 J per full-size training step (0.80 W average over
-18.1 s); clock-tree power is not included."
+18.1 s), i.e. 108 GFLOP/s/W at peak and 93 GFLOP/J over a step; glitch power (zero-delay simulation) and
+clock-tree power are not included."
 
 ## 2. Method
 
@@ -167,6 +198,12 @@ Measured:
   window per op type.
 
 Not measured, or estimated:
+- **Zero-delay simulation, so no glitch power.** Every net toggles at most once per evaluation, so the
+  switching and internal power of combinational glitches (in the FP multipliers and adders above all) is not
+  counted. This makes the switching part a lower bound; it is 0.28 W of the 0.87 W in a GEMM window.
+- **PrimePower at tt with the ss-closed clock.** The power is at tt (1.0 V, 25 C) with the 5.5 ns clock that
+  closes timing at ss (0.9 V, 125 C), and the ss RC estimate is used at tt. At tt the chip would run faster; the
+  figures are the power at 181.8 MHz.
 - **Pre-layout.** There is no clock tree: clock nets are ideal, so clock-buffer power is missing, while the clock
   pins of the flops, latches and ICGs are counted. Wires are DC topographical estimates (ss RC, used at tt). P9c's
   placement / CTS is not used here.

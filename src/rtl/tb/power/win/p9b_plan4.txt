@@ -1,0 +1,4 @@
+# P9b: the second LOWA_SG beside GEMM_ACC2 (2-layer program, layer 1's backward body: in the program the second
+# LOWA_SG issues when the first retires, and GEMM_ACC2 right after it, so the two overlap for ~180 k cycles; the
+# cut at op 58 starts both at once).  Kept descriptors decode to the same fields with the reset terms.
+gl2_sgacc  L2c58  4000  14000    # 58 LOWA_SG beside 59 GEMM_ACC2 M64 N768 K768 (QKV dX, merge on)
