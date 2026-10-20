@@ -55,6 +55,11 @@ foreach b $blocks {
     dict set bdir $b $d
     lappend files $d/$b.v
 }
+# T65_POST_DIR (P9c): the block after ICC2 placement + CTS + global route (pnr/groute.tcl out/): its one netlist (with the
+# clock tree and the optimisation / hold buffers), the ICC2 parasitics of the global route (ss RC: setup and, as in the
+# pre-layout runs, tt; ff RC: hold), propagated clocks.  The per-block DC parasitics are not read.
+set post [envd T65_POST_DIR ""]
+if {$post ne ""} { set files [list $post/[dict get $bdesign $top].v] }
 set_app_var search_path [concat . $::T65_LIBDIR]
 set_app_var link_path [concat * [t65_db $corner] $etms]
 read_verilog $files
@@ -63,6 +68,14 @@ link_design
 set ::argv [list $period $corner $out/pt_$corner.sdc [t65_hier $top io]]
 source $flow/sdc/gen_sdc.tcl
 source $out/pt_$corner.sdc
+if {$post ne ""} {
+    set rc [expr {$corner eq "ff" ? "ff" : "ss"}]
+    set sp [lsort [glob -nocomplain $post/[dict get $bdesign $top]*${rc}*.spef*]]
+    puts "T65_NOTE post spef $sp"
+    if {[llength $sp] != 1} { puts "T65_ERROR expected one $rc spef in $post, got [llength $sp]"; exit 1 }
+    set blocks [list]
+    set_propagated_clock [all_clocks]
+}
 
 # parasitics: each block's own SPEF on each of its instances
 set npar 0; set nparf 0
@@ -81,17 +94,46 @@ foreach b $blocks {
         if {[catch {read_parasitics -format spef -path [get_object_name $c] $f} e]} { incr nparf } else { incr npar }
     }
 }
+if {$post ne ""} {
+    if {[catch {read_parasitics -format spef [lindex $sp 0]} e]} { incr nparf; puts "T65_NOTE spef: $e" } else { incr npar }
+}
 update_timing
 redirect $out/rpt_annot_$corner.rpt { report_annotated_parasitics -list_not_annotated -max_nets 20 }
 
 set fh [open $out/summary_$corner.txt w]
-puts $fh "block $top corner $corner period_ns $period netlists [llength $files] ([join $blocks ,]) etm_children [llength $etms] clocks ideal (pre-CTS)"
-puts $fh "parasitics dc_topo_ss_estimate spef_reads $npar failed $nparf"
+puts $fh "block $top corner $corner period_ns $period netlists [llength $files] ([join $blocks ,]) etm_children [llength $etms] clocks [expr {$post ne "" ? "propagated (post-CTS, ICC2 clock tree)" : "ideal (pre-CTS)"}]"
+puts $fh "parasitics [expr {$post ne "" ? "icc2_[file tail $post]_[file tail [lindex $sp 0]]" : "dc_topo_ss_estimate"}] spef_reads $npar failed $nparf"
 set r [open $out/rpt_annot_$corner.rpt]
 foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Total|.*\|\s*[0-9]+\s*\|)} $line]} { puts $fh "annot [string trim $line]" } }
 close $r
 puts $fh "leaf_cells [sizeof_collection [get_cells -quiet -hierarchical -filter is_hierarchical==false]]"
 t65_put_timing $fh
+if {$post ne ""} {
+    # post-CTS: worst hold path with its launch / capture clock latencies (skew)
+    set q [get_timing_paths -delay_type min -max_paths 1]
+    puts $fh [format "hold_path %s launch_clk_lat %s capture_clk_lat %s" [t65_path_line $q] \
+        [t65_n [get_attribute -quiet $q startpoint_clock_latency]] [t65_n [get_attribute -quiet $q endpoint_clock_latency]]]
+    # register-to-register only (no IO): the unit's IO delays are relative to the ideal clock at the port, while the
+    # internal clock arrives after the tree's insertion delay (ICC2 adjusts IO latencies during CTS, PrimeTime does not),
+    # so IO paths of a unit run alone are boundary artefacts of the unit constraints, not chip paths
+    set rf [all_registers -clock_pins]; set rt [all_registers -data_pins]
+    foreach {dt lbl} {max setup min hold} {
+        set q [get_timing_paths -delay_type $dt -max_paths 1 -from $rf -to $rt]
+        set nv [sizeof_collection [get_timing_paths -delay_type $dt -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -from $rf -to $rt]]
+        puts $fh [format "r2r_%s_wns %s nviol %d path %s" $lbl [t65_n [get_attribute -quiet $q slack]] $nv [t65_path_line $q]]
+    }
+    foreach {dt lbl} {max setup min hold} {
+        set q [get_timing_paths -delay_type $dt -max_paths 1 -from [remove_from_collection [all_inputs] [get_ports clk]]]
+        set nv [sizeof_collection [get_timing_paths -delay_type $dt -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -from [remove_from_collection [all_inputs] [get_ports clk]]]]
+        puts $fh [format "in2reg_%s_wns %s nviol %d" $lbl [t65_n [get_attribute -quiet $q slack]] $nv]
+        set q [get_timing_paths -delay_type $dt -max_paths 1 -to [all_outputs]]
+        set nv [sizeof_collection [get_timing_paths -delay_type $dt -max_paths 100000 -nworst 1 -slack_lesser_than -0.0005 -to [all_outputs]]]
+        puts $fh [format "reg2out_%s_wns %s nviol %d" $lbl [t65_n [get_attribute -quiet $q slack]] $nv]
+    }
+    set q [get_timing_paths -delay_type max -max_paths 1]
+    puts $fh [format "setup_clk_lat launch %s capture %s" \
+        [t65_n [get_attribute -quiet $q startpoint_clock_latency]] [t65_n [get_attribute -quiet $q endpoint_clock_latency]]]
+}
 # the worst paths split by top-level instance (arrival spent in each instance along the path, ns)
 proc t65_path_top {p} {
     set s ""; set prev 0.0; set cur ""; set acc 0.0
