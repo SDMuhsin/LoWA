@@ -22,6 +22,14 @@
 - Speed per single-thread sim under the current load: ~1.2-1.5 k cycles/s; the longest chunk is ~42 M cycles, so ETA
   for the full-size numbers ~06:00-08:00 UTC (freeze 12:00).
 
+## 2026-10-20 00:45 UTC
+- V1 (in-situ 1-layer reduced, 2 steps, current RTL): E2E PASS; step 1 10,359,277 vs composed 10,359,261 (-16).
+- Full-size chunks done: C5, C10, D1a, D4, D5a. Full-size tail ops (GNORM x 7, DMA, AdamW x 2) are cycle-identical
+  to the reduced ones (5,534,967 both): the tail does not depend on B / L, as assumed.
+- The 8-thread 12-layer reduced in-situ run (V12) slowed to ~0.6 k cycles/s under the host load; added an isolated
+  single-thread 12-layer tail chunk (rT12) for the tail-growth term.
+- Remaining full-size chunks: ETA 02:00-06:00 UTC.
+
 ## 2026-10-19 22:35 UTC
 - In-situ 2-layer reduced run on current RTL (B 2, L 32): E2E PASS (ALLWRITES + 24/24 bit-exact), 15,020,725 cycles.
   Its forward body F1 = 2,108,967 (composed from the 1-layer chunks: 2,108,967, equal); backward body B1 = 2,545,138
