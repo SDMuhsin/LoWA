@@ -154,3 +154,15 @@ src/rtl/
   deltas reported, then mm DC + flat-chip PT at 5.25 ns. If P8f closes the chip by the results freeze, the
   headline becomes that period with the fix merged; otherwise 7.75 ns stands and P8f is reported as the
   identified fix.
+
+## R18 (2026-10-20): P9 measured numbers replace P8 estimates in the paper
+- Step: 3,880.4 M cycles = 21.34 s at 5.5 ns, measured in Verilator RTL simulation (chunked at drain points, validated
+  to 0.002 % against a complete 12-layer reduced run; docs/p9a_report.md). Array utilisation 0.727. budget.py's
+  18.1 s (CLS-pruned, model) is withdrawn from the paper. CLS pruning is not compiled; no estimate "with pruning" is quoted.
+- Power: gate-level measured activity, tt, pre-layout (docs/p9b_report.md): GEMM 0.864 W, step average 0.77 W,
+  16.4 J per step. P8's 0.475 W / 0.60 W are superseded. Peak efficiency 93.1 GFLOP/s / 0.864 W = 0.108 TFLOPS/W.
+- Layout (docs/p9c_report.md): three units placed + CTS close 5.7-5.9 ns and gain 17-30 % power; the chip clock stays
+  the synthesis figure (5.5 ns) and the paper states the post-CTS unit result as a limitation. Latch-RF routing
+  congestion (lw) is recorded; the SRAM-macro variant is the layout path.
+- MRPC under chip-exact arithmetic (docs/p9d_report.md): median acc 87.75 / F1 91.23 over seeds 42-46; the table's
+  score source becomes chip-exact emulation.
