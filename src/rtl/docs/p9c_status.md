@@ -61,3 +61,18 @@ Branch p9c, server tau-02, clone ~/lowa_tsmc65/p9c (netlists read from the P8 ch
 - ss hold: the cts stage fixed hold at ff only; at ss the clock skew is larger (ICC2: 0.59 / 0.67 ns global skew at
   ss vs 0.24 at ff). mm's ss hold violators are all in the write skid buffers. Running: mm hold fix at ss + ff
   (holdfix stage) and its post PT. vu16: clock_opt done (6 h 48 min), global route running. lw at 0.50 util: CTS.
+
+## 2026-10-20 03:40 UTC
+- (Correction to 02:10: vu16 clock_opt took 2 h 48 min / 13.0 GB, not 6 h 48 min.)
+- **The ss hold violations are unit-boundary artefacts**: all are input-port -> register paths (IO delay referenced to
+  the ideal port clock, capture after ~1.2 ns of tree insertion delay; ICC2 adjusts IO latency in CTS, PrimeTime does
+  not). Register-to-register hold is clean at ss and ff in all three units. The extra holdfix stage changed nothing
+  material (kept; vu16 / mm numbers below are from it).
+- Post-CTS, register-to-register setup at ss, 5.5 ns, sign-off SDC (0.25 ns uncertainty):
+  lw -0.101 (placement RC estimate; its global route is congested), mm -0.286 (global route) / -0.103 (estimate),
+  vu16 -0.392 (global route, 3,377 endpoints, lane SFU FMA). PT period sweeps: lw closes 5.7 ns (estimate), mm 5.8 ns
+  (global route). No post-route optimisation was run (out of scope), which normally recovers part of this.
+- Power tt vectorless, post vs pre (same unit): lw 42.8 / 33.9 mW (+26 %), mm 57.5 / 44.1 (+30 %),
+  vu16 116.4 / 99.7 (+17 %); clock network +44 % / +47 % / +47 %.
+- lw at 0.50 utilisation is still congested (14.5 % GRC overflow vs 19.4 % at 0.65; vu16 0.36 %, mm 0.39 %): the
+  512 / 768-word latch-RF banks' read muxes. Running: lw at 0.50 with a 0.55 local density cap; vu16 sweeps.
