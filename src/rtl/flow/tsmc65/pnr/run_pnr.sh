@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ICC2 floorplan / placement / clock tree / global route of one block (P9c):
-#   flow/tsmc65/pnr/run_pnr.sh <block> [first_stage] [last_stage]      stages: ndm floorplan place cts groute
+#   flow/tsmc65/pnr/run_pnr.sh <block> [first_stage] [last_stage]      stages: ndm floorplan place cts groute [cts_out]
 # Environment: T65_PERIOD (required), T65_UTIL (0.65), T65_CORES (8), T65_KID_TAG, T65_HIER (default
 #   build/tsmc65/hier of this tree), T65_PNR_TAG (run-dir suffix).
 # Output build/tsmc65/pnr/<block><tag>/ (stays on the server); per-stage summary_<stage>.txt, time_<stage>.txt
@@ -14,7 +14,7 @@ export T65_NDM=$ROOT/build/tsmc65/pnr/ndm
 export T65_PNR=$ROOT/build/tsmc65/pnr/$b${T65_PNR_TAG:-}
 mkdir -p "$T65_NDM" "$T65_PNR" "$ROOT/build/tsmc65/summary"
 BIN=$(sed -n 's/^set ::T65_ICC2_BIN *//p' "$ROOT/flow/tsmc65/site/site_pnr.tcl")
-stages="ndm floorplan place cts groute"; run=0
+stages="ndm floorplan place cts groute cts_out"; run=0   # cts_out: only on request (first stage)
 for s in $stages; do
     [ "$s" = "$first" ] && run=1
     [ $run = 1 ] || continue
