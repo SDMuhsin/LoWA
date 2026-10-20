@@ -22,6 +22,11 @@
 - Speed per single-thread sim under the current load: ~1.2-1.5 k cycles/s; the longest chunk is ~42 M cycles, so ETA
   for the full-size numbers ~06:00-08:00 UTC (freeze 12:00).
 
+## 2026-10-20 05:10 UTC: DONE
+- S0_2 done (PASS); DRAM per full step measured: 96.73 GB read + 6.81 GB write = 103.5 GB, 26.7 B/cycle = 4.85 GB/s at
+  181.8 MHz (83 % of the port). docs/p9a_report.md final. No simulations left running. Run directories (35 GB) stay in
+  the worktree's build/e2e for inspection.
+
 ## 2026-10-20 04:15 UTC
 - All full-size chunks done; all 22 chunk / single-op runs PASS `--check-only` (bit-exact vs the interpreter on the same
   chunk program).

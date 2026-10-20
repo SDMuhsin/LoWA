@@ -29,7 +29,8 @@ cycle-accurate simulation of the chip RTL:
   - budget.py puts the pruning saving at 195.1 M cycles. Applying that saving to the measured step gives
     ~3,685 M = ~20.3 s.
   - This is an **estimate, not a measurement**.
-- DRAM traffic and bandwidth demand: section 5.
+- **DRAM, measured: 103.5 GB per step** (96.73 GB read, 6.81 GB write). The average demand is 26.7 B/cycle =
+  4.85 GB/s at 181.8 MHz, 83 % of the 5.82 GB/s port (section 5).
 
 ## 2. Method
 One full-size step is ~3.9 G cycles. On the shared host (load average 60-170 on 48 cores from other projects the whole
@@ -189,12 +190,30 @@ The +394.7 M cycles over budget.py's step model (3,485.7 M, no pruning) break do
 The rest is small: AdamW is exact, and the GNORMs are below the model.
 
 ## 5. DRAM traffic and bandwidth demand
-TBD (S0_2 pending)
+The data come from every chunk run's ACCT counters: AXI R and W beats of 32 B, counted while the sequencer runs.
+- Ops simulated in two chunks are subtracted once, using their single-op runs. Op 44, a LoWA SG, is subtracted using
+  the equivalent single-SG chunk D5a.
+- The forward body's beats are C1 - S0_2 + C2 - S6 + C3 - S10 + C4 + S10. Op 13 is the same LN_FWD shape as op 10.
+- The tail growth (coefficient GNORM / AdamW, a few hundred kB) is not included.
+
+| part | read | write | average demand | at 181.8 MHz | share of the 32 B/cycle port |
+|---|---|---|---|---|---|
+| 1-layer step | 7.25 GB | 0.58 GB | 24.55 B/cycle | 4.46 GB/s | 76.7 % |
+| forward body | 3.86 GB | 0.25 GB | 28.69 B/cycle | 5.22 GB/s | 89.7 % |
+| backward body | 4.27 GB | 0.31 GB | 25.43 B/cycle | 4.62 GB/s | 79.5 % |
+| **12-layer step** | **96.73 GB** | **6.81 GB** | **26.68 B/cycle** | **4.85 GB/s** | **83.4 %** |
+
+- **Traffic.** The measured 103.5 GB per step is +1.1 % over budget.py's 102.43 GB (no pruning; 95.95 GB pruned).
+- **Average demand.** The port peak is 5.82 GB/s at 181.8 MHz, and the measured average is 4.85 GB/s.
+  - P8 quoted 5.30 GB/s, which is budget.py's 95.95 GB / 18.1 s. The measured step moves slightly more bytes over a
+    longer time.
+- **Peaks.** Individual ops run at the port limit; QK^T, for one, uses 0.999 beats/cycle. So the DRAM behind the
+  port must sustain about 5.8 GB/s at the 181.8 MHz clock for the measured cycle count to hold.
 
 ## 6. Proposed paper text
 > The full training step (12 layers, batch 32, sequence 128) takes 3.88 G cycles, measured in cycle-accurate
 > simulation of the chip RTL (Verilator) with a fixed-latency DRAM model at 32 B/cycle: 21.3 s at the 181.8 MHz
-> chip clock, an array utilisation of 73 %. Because one full-step simulation would take days, the step was simulated
+> chip clock, an array utilisation of 73 %, with 103.5 GB of DRAM traffic per step (4.85 GB/s on average). Because one full-step simulation would take days, the step was simulated
 > as program chunks that start at points where the chip is idle (the schedule is static and data-independent),
 > and composed; the composition reproduces a complete in-situ 12-layer simulation at reduced batch and sequence
 > length to 0.002 %.
