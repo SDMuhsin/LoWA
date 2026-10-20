@@ -167,6 +167,8 @@ def main():
     ap.add_argument("--memw", type=int, default=0)
     ap.add_argument("--threads", type=int, default=1, help="Verilator --threads")
     ap.add_argument("--stop-after", type=int, default=None, help="debug: stop after this unit op")
+    ap.add_argument("--nop-before", type=int, default=None,
+                    help="P9a timing segments: unit ops before this one (static program order) become NOPs")
     ap.add_argument("--check-only", action="store_true", help="compare the dumps of an existing (running) simulation")
     ap.add_argument("--prep-only", action="store_true", help="image, goldens and build only; no simulation")
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "e2e"))
@@ -174,24 +176,35 @@ def main():
     assert not a.l1 or a.layers == 12, "the L1 step is the 12-layer model"
     c = CP.Cfg(a.layers, a.batch, a.seq)
     tag = f"l{a.layers}_b{a.batch}_s{a.seq}_n{a.steps}"
+    tag += (f"_nop{a.nop_before}" if a.nop_before is not None else "") + (f"_stop{a.stop_after}" if a.stop_after is not None else "")
     bdir = os.path.join(a.out, tag)
     os.makedirs(bdir, exist_ok=True)
     t0 = time.time()
     r = CP.compile_all(c)
     inp, s0 = r["inp"], int(r["inp"]["step_s"])
-    if a.stop_after is not None:                 # debug: END after the k-th unit op in program order (both sides)
+    if a.stop_after is not None or a.nop_before is not None:
+        # debug / P9a timing segments (both sides): END after the k-th unit op in static program order; the unit ops
+        # before static op j become NOPs (one NOP per 64 B slot, so the program layout and LOOP bodies are unchanged)
         pr = next(arr for ad, arr in r["img"].reg if ad == CP.REG["PROG"])
         pc, k = 0, -1
+        nop = isa.encode("NOP", {})
         while True:
             h = isa.header(int(pr[pc // 4]))
             nsl = ((int(pr[pc // 4]) >> 21) & 3) + 1
-            if k == a.stop_after:
+            if a.stop_after is not None and k == a.stop_after:
                 pr[pc // 4] = isa.OPS["END"][0] | (0xF << 12) | (0xF << 16)
+                print(f"debug: END at {pc:#x}, after unit op {a.stop_after}")
                 break
             if h["unit"] != isa.UNIT_SEQ:
                 k += 1
+                if a.nop_before is not None and k < a.nop_before:
+                    for s in range(nsl):
+                        pr[pc // 4 + 16 * s:pc // 4 + 16 * (s + 1)] = nop
+            if (int(pr[pc // 4]) & 0xFF) == isa.OPS["END"][0]:
+                break
             pc += 64 * nsl
-        print(f"debug: END at {pc:#x}, after unit op {a.stop_after}")
+        if a.nop_before is not None:
+            print(f"P9a: unit ops 0..{a.nop_before - 1} (static program order) replaced by NOPs")
     print(f"compiled {tag}: {r['ndesc']} descriptors, {r['prog'].size * 4} B, {r['flat_ops']} ops unrolled", flush=True)
     # per-step batches: step k uses rows [k B, (k+1) B) of the step-B batch
     full = dict(np.load(os.path.join(CP.RUNS, "stepB_l0f32.npz")))
