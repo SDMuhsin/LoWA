@@ -14,7 +14,7 @@ full-size training step.
   SAIF covers **100.00 % of the 5,368,682 nets and 100.00 % of the leaf cells** (the 1.2 M latch-RF bits
   included).
 - The power is PrimePower (averaged) on the flat chip at tt (1.0 V, 25 C), 181.8 MHz.
-- The workload is 22 windows of 10-60 k cycles, each inside one op, cut from the real step program (the 1-layer and
+- The workload is 23 windows of 10-60 k cycles, each inside one op, cut from the real step program (the 1-layer and
   2-layer reduced programs, B 2, L 32). A whole step cannot be simulated at gate level (section 2.2).
 - Every window's gate-level run is cycle-exact and bit-exact against the Verilator RTL (section 2.3).
 - All numbers are **pre-layout**: ideal clocks (no clock tree), DC wire estimates.
@@ -25,7 +25,8 @@ full-size training step.
 |---|---|---|
 | **GEMM** | Q-projection with LoWA merge 0.868, K 0.867, O 0.872, FFN2 0.871, FFN1 + GELU 0.873; backward dX (2-layer, dense gradients): FFN2-dX 0.867, FFN1-dX 0.874, O-dX 0.868; attention scores 0.726 | **0.864 W** (full-size MAC mix: forward dense 32 %, FFN1 16 %, backward dX 47 %, attention 4.5 %) |
 | **vector** | SMAX_FWD 0.433, LN_FWD 0.450, SMAX_REC 0.432, SMAX_BWD 0.418, LN_BWD 0.427 (dense gradients); also EMB 0.419, GN_ROWS 0.435 | **0.433 W** (full-size vector-cycle mix of budget.py) |
-| **LoWA** (LOWA_SG, beside the GEMMs) | LOWA_SG alone 0.403 W; the LoWA engine (u_lw) draws 0.042 W in it vs 0.025 W idle | **+0.017 W** on top of the GEMM phase while it runs |
+| **LoWA** (LOWA_SG, beside the GEMMs) | LOWA_SG alone 0.403 W, where the LoWA engine (u_lw) draws 0.042 W vs 0.025 W idle. Measured overlapped (window gl2_sgacc: LOWA_SG beside GEMM_ACC2, 2-layer layer-1 backward): chip 0.564 W, u_lw 0.042 W, u_gm 0.428 W, the same as the sparse-gradient GEMM alone (0.435; layer 1 is the last layer, so its backward sees
+CLS-only gradients). So the engine adds the same +0.017 W beside a GEMM | **+0.017 W** on top of the GEMM phase while it runs |
 | **optimiser** (ADAMW) | 0.396 | **0.396 W** |
 | all engines idle (floor) | ICG clock pins 0.30 W (ideal clock, every cycle) + leakage 0.082 W | about 0.39 W |
 
@@ -98,12 +99,15 @@ gate level. The 7 vector / LoWA / AdamW-only stimuli all matched.
 - Recompiled with `+vcs+initreg+random` and run with every register initialised to 0, to all ones, or to random
   values, VCS RTL matches Verilator exactly on the GEMM stimuli tested. For example:
   - op 6: 10,688 write beats, signature 8b7138cc343a4e35, for 0, 1 and random;
-  - op 3: 2,560 beats, signature da651eb438c7dcf2, for 0 and 1. (The other initial values for op 3 and op 40 had
-    not finished when this was written.)
+  - op 3: 2,560 beats, signature da651eb438c7dcf2, for 0, 1 and random;
+  - op 40 (SMAX_BWD, then GEMMs): 16,849 beats, signature 9a9a7dc7cc0ee5ef, for 0 and random.
+    With all ones, every op-log event and every heartbeat signature is the same but shifted by exactly one cycle,
+    because the testbench's own cycle counter also starts at all ones. So the 80 k-cycle cut-off holds one beat
+    fewer.
 - So some non-reset gm_top registers start at X, and X-pessimistic RTL evaluation in VCS stalls the GEMM. With any
   defined power-up value the behaviour is identical.
 - The gate-level runs were never affected: the netlist has no X, its flops start at 0, and it matches Verilator.
-- How sure: high that it is X-initialisation. Three different initial values give one result, and the
+- How sure: high that it is X-initialisation. Three different initial values give one behaviour on three GEMM stimuli, and the
   uninitialised run is the only divergent one.
 - It is not proven that *every* power-up state behaves identically. Only three were simulated, and the registers
   concerned were not identified. A reset for those registers (or an X-tolerant review) is advisable before a real
@@ -171,7 +175,7 @@ Reference: the same testbench on the RTL in Verilator, the simulator of the bit-
   accepted W beat's data, strobes and address);
 - the op log (cycle of every unit start / done / retire).
 
-Result: **CMP_VREF ALL OK** for all 22 windows. Write
+Result: **CMP_VREF ALL OK** for all 23 windows (incl. the overlapped LoWA + GEMM window gl2_sgacc). Write
 beats with data inside the gate-level runs:
 
 | windows with DRAM writes before their last heartbeat | write beats compared (signature equal) |
