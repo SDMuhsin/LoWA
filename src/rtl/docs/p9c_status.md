@@ -46,3 +46,18 @@ Branch p9c, server tau-02, clone ~/lowa_tsmc65/p9c (netlists read from the P8 ch
 - Running: lw post-CTS PrimeTime with (i) the global-route SPEF and (ii) ICC2's placement-based RC estimate of the
   post-CTS database; lw again at 0.50 utilisation (does the congestion go away? die-area datum); mm clock_opt;
   vu16 clock_opt (place took 1 h 56 min / 8 threads).
+
+## 2026-10-20 02:10 UTC
+- Post-CTS PrimeTime / PrimePower (5.5 ns, sign-off SDC with 0.25 ns setup uncertainty, propagated clocks):
+
+  | unit | parasitics | ss setup WNS [viol] | ss hold WNS [viol] | ff hold | tt power (pre-layout same unit) | clock network tt |
+  |---|---|---|---|---|---|---|
+  | lw | ICC2 placement estimate | -0.101 [198] | -0.028 [117] | +0.009 | 42.8 mW (33.9) | 26.7 mW (18.4) |
+  | lw | global route (19 % overflow) | -4.02 [1,731] | +0.014 | +0.007 | 42.8 mW | 26.3 mW |
+  | mm | ICC2 placement estimate | -0.103 [286] | -0.276 [667] | +0.015 | 57.6 mW (44.1) | 18.2 mW (12.2) |
+  | mm | global route (0.39 % overflow) | -0.282 [685] | -0.226 [344] | +0.014 | 57.6 mW | 17.9 mW |
+
+- Power is insensitive to the parasitics source (same to 0.1 %): +26 % (lw), +31 % (mm) over pre-layout.
+- ss hold: the cts stage fixed hold at ff only; at ss the clock skew is larger (ICC2: 0.59 / 0.67 ns global skew at
+  ss vs 0.24 at ff). mm's ss hold violators are all in the write skid buffers. Running: mm hold fix at ss + ff
+  (holdfix stage) and its post PT. vu16: clock_opt done (6 h 48 min), global route running. lw at 0.50 util: CTS.
