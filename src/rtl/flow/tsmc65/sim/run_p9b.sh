@@ -17,7 +17,8 @@ sel=${1:-}
 while read -r n st a b _; do
     case $n in ''|\#*) continue ;; esac
     [ -n "$sel" ] && ! echo " $sel " | grep -q " $n " && continue
-    while [ "$(jobs -rp | wc -l)" -ge "$PAR" ]; do sleep 20; done
+    # at most PAR gate-level simulations of this user on the host (any batch, RTL references included)
+    while [ "$(jobs -rp | wc -l)" -ge "$PAR" ] || [ "$(pgrep -u "$USER" -c -x simv)" -ge "$PAR" ]; do sleep 20; done
     echo "$n $a $b" > "$G/win/$n.txt"
     echo "$n $G/w_$n/$n.saif" >> "$WL"
     echo "GLS_WIN_START $n $st $a $b $(date -u +%H:%M)"

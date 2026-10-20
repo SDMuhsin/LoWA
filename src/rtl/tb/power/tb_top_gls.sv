@@ -160,6 +160,7 @@ module tb_top_gls;
     longint w0, w1;
     integer fw, rcw, nwin = 0, fchk;
     string sname, scmd;           // $toggle_report takes the file name as a string (a reg vector is rejected)
+`ifndef VERILATOR                 // (a Verilator build of this testbench is the RTL reference; no SAIF there)
     initial begin
         if ($value$plusargs("saifwin=%s", fwin)) begin
             $set_gate_level_monitoring("on");
@@ -188,6 +189,7 @@ module tb_top_gls;
             $finish;
         end
     end
+`endif
 
     // ------------------------------------------------------------------ main (host script, as tb_top)
     always @(posedge clk) if (cyc >= maxcyc || (stopcyc > 0 && cyc >= stopcyc)) begin

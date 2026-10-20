@@ -60,3 +60,21 @@
   backward windows under-read. Batch 3 re-measures the backward on layer 0 of the 2-layer program, where the
   gradients are dense (MEMW 25 build). Batch 2 adds more forward GEMM types (K, attention scores, O, FFN2).
 - ETA: batches 2 and 3 about 02:30, PrimePower about 03:00.
+
+## 2026-10-20 02:45 UTC
+- All 22 windows measured, and all match the Verilator RTL (CMP_VREF ALL OK: heartbeats with DRAM write signatures,
+  op logs). Found on the way: the VCS RTL run of gm_top does not match Verilator on GEMM stimuli. The
+  gate-level runs match Verilator.
+- Phase power, tt, 181.8 MHz, pre-layout:
+
+  | phase | power |
+  |---|---|
+  | GEMM | 0.864 W (all 9 GEMM windows 0.867-0.874 W, attention scores 0.726 W) |
+  | vector | 0.433 W |
+  | LOWA_SG beside GEMM | +0.017 W |
+  | ADAMW | 0.396 W |
+  | idle floor | about 0.39 W |
+
+- Full-size step with budget.py's phase times: **14.4 J, 0.80 W average over 18.1 s**.
+- The report (docs/p9b_report.md) is written. The update with P9a's measured cycles is pending; P9a's ETA is
+  06:00-08:00.
