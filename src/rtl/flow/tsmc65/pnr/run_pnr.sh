@@ -14,7 +14,7 @@ export T65_NDM=$ROOT/build/tsmc65/pnr/ndm
 export T65_PNR=$ROOT/build/tsmc65/pnr/$b${T65_PNR_TAG:-}
 mkdir -p "$T65_NDM" "$T65_PNR" "$ROOT/build/tsmc65/summary"
 BIN=$(sed -n 's/^set ::T65_ICC2_BIN *//p' "$ROOT/flow/tsmc65/site/site_pnr.tcl")
-stages="ndm floorplan place cts groute cts_out"; run=0   # cts_out: only on request (first stage)
+stages="ndm floorplan place cts groute holdfix cts_out"; run=0   # holdfix, cts_out: only on request (first stage)
 for s in $stages; do
     [ "$s" = "$first" ] && run=1
     [ $run = 1 ] || continue
