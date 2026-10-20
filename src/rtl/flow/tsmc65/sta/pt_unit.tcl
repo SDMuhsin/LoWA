@@ -102,7 +102,7 @@ redirect $out/rpt_annot_$corner.rpt { report_annotated_parasitics -list_not_anno
 
 set fh [open $out/summary_$corner.txt w]
 puts $fh "block $top corner $corner period_ns $period netlists [llength $files] ([join $blocks ,]) etm_children [llength $etms] clocks [expr {$post ne "" ? "propagated (post-CTS, ICC2 clock tree)" : "ideal (pre-CTS)"}]"
-puts $fh "parasitics [expr {$post ne "" ? "icc2_global_route_[file tail [lindex $sp 0]]" : "dc_topo_ss_estimate"}] spef_reads $npar failed $nparf"
+puts $fh "parasitics [expr {$post ne "" ? "icc2_[file tail $post]_[file tail [lindex $sp 0]]" : "dc_topo_ss_estimate"}] spef_reads $npar failed $nparf"
 set r [open $out/rpt_annot_$corner.rpt]
 foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Total|.*\|\s*[0-9]+\s*\|)} $line]} { puts $fh "annot [string trim $line]" } }
 close $r
