@@ -76,3 +76,9 @@ Branch p9c, server tau-02, clone ~/lowa_tsmc65/p9c (netlists read from the P8 ch
   vu16 116.4 / 99.7 (+17 %); clock network +44 % / +47 % / +47 %.
 - lw at 0.50 utilisation is still congested (14.5 % GRC overflow vs 19.4 % at 0.65; vu16 0.36 %, mm 0.39 %): the
   512 / 768-word latch-RF banks' read muxes. Running: lw at 0.50 with a 0.55 local density cap; vu16 sweeps.
+
+## 2026-10-20 03:55 UTC
+- vu16 sweeps: global route closes 5.9 ns (-0.392 at 5.5); placement estimate closes 5.7 ns (-0.135 at 5.5).
+- Report draft committed (docs/p9c_report.md): chip extrapolation 0.56-0.59 W vectorless tt, ~5.9 ns post-CTS
+  before post-route optimisation; 5.5 ns stays a pre-layout figure.
+- Remaining: lw at 0.50 utilisation with a 0.55 density cap (ETA ~06:30 UTC), then cleanup of /tmp/lwta_p9c.
