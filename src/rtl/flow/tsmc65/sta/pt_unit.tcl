@@ -108,6 +108,15 @@ foreach line [split [read $r] "\n"] { if {[regexp {^\s*(Total|.*\|\s*[0-9]+\s*\|
 close $r
 puts $fh "leaf_cells [sizeof_collection [get_cells -quiet -hierarchical -filter is_hierarchical==false]]"
 t65_put_timing $fh
+if {$post ne ""} {
+    # post-CTS: worst hold path with its launch / capture clock latencies (skew)
+    set q [get_timing_paths -delay_type min -max_paths 1]
+    puts $fh [format "hold_path %s launch_clk_lat %s capture_clk_lat %s" [t65_path_line $q] \
+        [t65_n [get_attribute -quiet $q startpoint_clock_latency]] [t65_n [get_attribute -quiet $q endpoint_clock_latency]]]
+    set q [get_timing_paths -delay_type max -max_paths 1]
+    puts $fh [format "setup_clk_lat launch %s capture %s" \
+        [t65_n [get_attribute -quiet $q startpoint_clock_latency]] [t65_n [get_attribute -quiet $q endpoint_clock_latency]]]
+}
 # the worst paths split by top-level instance (arrival spent in each instance along the path, ns)
 proc t65_path_top {p} {
     set s ""; set prev 0.0; set cur ""; set acc 0.0

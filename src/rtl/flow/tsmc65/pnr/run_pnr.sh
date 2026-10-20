@@ -25,9 +25,10 @@ for s in $stages; do
             grep -q NDM_OK lm.log || { echo "PNR_FAIL ndm $T65_NDM/lm.log"; exit 1; }; }
     else
         cd "$T65_PNR" || exit 1
-        /usr/bin/time -v -o time_$s.txt tcsh -f -c "source $ROOT/flow/tsmc65/common/env.csh; setenv LD_PRELOAD /usr/lib64/libz.so.1; $BIN/icc2_shell -f $ROOT/flow/tsmc65/pnr/$s.tcl" > $s.log 2>&1
-        sm=$ROOT/build/tsmc65/summary/pnr_$b${T65_PNR_TAG:-}_$s.txt
-        { [ -f summary_$s.txt ] && cat summary_$s.txt; grep -E "Maximum resident|Elapsed" time_$s.txt | sed 's/^\s*/time_/'
+        sn=$s; [ "$s" = groute ] && [ "${T65_GR_FROM:-cts}" != cts ] && sn=groute_$T65_GR_FROM
+        /usr/bin/time -v -o time_$sn.txt tcsh -f -c "source $ROOT/flow/tsmc65/common/env.csh; setenv LD_PRELOAD /usr/lib64/libz.so.1; $BIN/icc2_shell -f $ROOT/flow/tsmc65/pnr/$s.tcl" > $s.log 2>&1
+        sm=$ROOT/build/tsmc65/summary/pnr_$b${T65_PNR_TAG:-}_$sn.txt
+        { [ -f summary_$sn.txt ] && cat summary_$sn.txt; grep -E "Maximum resident|Elapsed" time_$sn.txt | sed 's/^\s*/time_/'
           echo "icc2_errors $(grep -c '^Error' $s.log)"; } > "$sm"
         grep -q "STAGE_OK $s" $s.log || { echo "PNR_FAIL $s ($(grep -c '^Error' $s.log) errors, $T65_PNR/$s.log)"; exit 1; }
     fi
