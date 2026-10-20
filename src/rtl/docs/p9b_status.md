@@ -78,3 +78,11 @@
 - Full-size step with budget.py's phase times: **14.4 J, 0.80 W average over 18.1 s**.
 - The report (docs/p9b_report.md) is written. The update with P9a's measured cycles is pending; P9a's ETA is
   06:00-08:00.
+
+## 2026-10-20 03:25 UTC
+- PI requests added to the report: the Table IV efficiency figures (107.7 GFLOP/s/W peak at the GEMM-phase power,
+  93.3 GFLOP/J step average), the caveats (zero-delay so no glitch power; pre-layout; tt with the ss-closed clock),
+  and the VCS RTL mismatch, traced to X initial values: with registers initialised to 0, 1 or random values, VCS RTL
+  matches Verilator.
+- Overlapped LoWA + GEMM window measured: u_lw adds +0.017 W beside a GEMM, the same as the composed figure.
+- Waiting for P9a's full-size cycles. Its draft report has no numbers yet.
