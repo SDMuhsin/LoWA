@@ -61,8 +61,26 @@ section 8; P9a's measured cycles were not available at the time of writing, see 
   own window's power) averages 0.52 W, or 29.7 mJ. It is dominated by the AdamW of the classifier head (51 % of
   its cycles), which at full size is 0.2 % of the step.
 
-With P9a's measured full-size cycles (docs/p9a_report.md), the same powers give: pending (P9a ETA 06:00-08:00 UTC);
-the step energy scales with the GEMM time at 0.864 W per second of GEMM and the vector time at 0.433 W.
+**With P9a's measured schedule** (docs/p9a_report.md; numbers from P9a's composition file `p9a_full.json` of
+03:39 UTC, before P9a's report was final): `tb/power/p9b_energy_p9a.py` puts every op of P9a's full-size chunks (B 32,
+L 128, their op logs) at its window's power.
+- Model: power = idle floor (0.3865 W) + the sum over the running ops of (window power - floor). Additivity was
+  checked on the one overlap the program has (LoWA SG beside GEMM_ACC2, 1.1).
+- The parts are composed as P9a composes the cycles: step(12) = step(1) + 11 x (forward body + backward body) +
+  tail growth.
+
+| | P9a measured schedule | budget.py (above) |
+|---|---|---|
+| step cycles | **3,880.4 M = 21.34 s** (the program as compiled, without CLS pruning) | 3,290.6 M = 18.1 s (CLS-pruned) |
+| busy cycles: GEMM (dense / FFN1 / attention) | 2,378 / 493 / 178 M | 2,778 M |
+| busy cycles: vector | 672 M | 507 M |
+| busy cycles: LOWA_SG (half beside GEMM_ACC2) | 276 M | 262 M (all overlapped) |
+| busy cycles: AdamW | 5.3 M | 6.0 M |
+| **energy per step** | **16.4 J** | 14.4 J |
+| average power | **0.77 W** | 0.80 W |
+| step-average efficiency | 2 x 673.7 G useful MACs / 16.4 J = **82 GFLOP/J** (2 x 722.0 G MACs as executed, unpruned: 88 GFLOP/J) | 93 GFLOP/J |
+
+The P9a column is the one to quote once P9a's numbers are final: measured cycles x measured power.
 
 ### 1.3 Energy efficiency (for Table IV)
 
